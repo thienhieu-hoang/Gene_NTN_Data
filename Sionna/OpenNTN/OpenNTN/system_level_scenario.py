@@ -14,7 +14,7 @@ from abc import abstractmethod
 from sionna.phy.block import Object
 from sionna.phy.constants import SPEED_OF_LIGHT, PI
 from sionna.phy.utils import log10
-from sionna.phy.channel.tr38811.utils import sample_bernoulli
+from sionna.phy.channel.utils import sample_bernoulli
 from sionna.phy.channel.utils import rad_2_deg, wrap_angle_0_360
 from .antenna import PanelArray
 import math
@@ -88,11 +88,11 @@ class SystemLevelScenario(Object):
         self._lambda_0 = tf.constant(SPEED_OF_LIGHT/carrier_frequency,
             self.rdtype)
 
-        # UTs and BSs arrays
-        assert isinstance(ut_array, PanelArray), \
-            "'ut_array' must be an instance of PanelArray"
-        assert isinstance(bs_array, PanelArray), \
-            "'bs_array' must be an instance of PanelArray"
+        #### UTs and BSs arrays
+        # assert isinstance(ut_array, PanelArray), \
+        #     "'ut_array' must be an instance of PanelArray"
+        # assert isinstance(bs_array, PanelArray), \
+        #     "'bs_array' must be an instance of PanelArray"
         self._ut_array = ut_array
         self._bs_array = bs_array
 
