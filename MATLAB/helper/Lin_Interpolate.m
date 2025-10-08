@@ -14,7 +14,7 @@ function varargout = Lin_Interpolate(Y_noise, pilot_Indices, pilot_Symbols)
 
     % Obtain pilot symbol estimates
     dmrsRx = Y_noise(pilot_Indices);
-    dmrsEsts = dmrsRx .* conj(pilot_Symbols);
+    dmrsEsts = dmrsRx ./ (pilot_Symbols);
 
     % Create empty grids to fill after linear interpolation
     [H_equalized, rxDMRSGrid, H_linear] = deal(zeros(size(Y_noise)));
@@ -38,6 +38,7 @@ function varargout = Lin_Interpolate(Y_noise, pilot_Indices, pilot_Symbols)
         end
     elseif numel(dmrsSymbol)>1
         % Perform linear interpolation
+        dmrsEsts = double(dmrsEsts);
         [l_hest,k_hest] = meshgrid(1:size(H_linear,2),1:size(H_linear,1));
         f = scatteredInterpolant(dmrsSubs(:,2),dmrsSubs(:,1),dmrsEsts);
         H_linear = f(l_hest,k_hest);
