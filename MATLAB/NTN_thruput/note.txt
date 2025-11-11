@@ -1,0 +1,9 @@
+OCde adapted from MATLAB example
+- Run one of the following files: 
+	Gen_Chan.mlx  		   : to generate dataset, with defined delay spread, for example, 30 ns
+	Gen_Chan_dSpread_range.mlx : to generate dataset with different delay spread, for example, 100-500 ns
+		- change d_spread.low and d_spread.high
+- Results saved at generatedChannel
+- Rename the result folder before running new settings to avoid overwriting to the old folder
+
+- run visualizeChan.mlx to visualize the generated channels
