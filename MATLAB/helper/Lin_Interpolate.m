@@ -44,8 +44,7 @@ function varargout = Lin_Interpolate(Y_noise, pilot_Indices, pilot_Symbols)
         H_linear = f(l_hest,k_hest);
     end
     
-    if nargout >= 2
-        varargout{1} = H_equalized;
-        varargout{2} = H_linear;
-    end
+    varargout{1} = H_equalized;
+    varargout{2} = H_linear;
+    varargout{3} = rxDMRSGrid; 
 end
