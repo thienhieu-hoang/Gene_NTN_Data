@@ -613,6 +613,14 @@ classdef HelperNRNTNThroughput
             subframeTimes = (0:(nf*nSubFrames)-1)*1e-3;
             slotTimes = cast(reshape(samples+subframeTimes,[],1),dt);
         end
+        
+        function info = initializeDelayObjects_simplified(simParameters)
+            c = physconst("lightspeed");
+            SU = slantRangeCircularOrbit(simParameters.ElevationAngle, ...
+                simParameters.SatelliteAltitude,simParameters.MobileAltitude);
+            lambda = c/simParameters.CarrierFrequency;
+            info.pathLoss = fspl(SU,lambda)*double(simParameters.IncludeFreeSpacePathLoss); % in dB
+        end
 
         function info = initializeDelayObjects(simParameters,waveformInfo)
             % Initialize the delay objects by calculating the slant
