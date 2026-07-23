@@ -251,31 +251,49 @@ Standardized link-level simulations utilize Tapped Delay Line (TDL) profiles ada
 
 
 
-# 8. Observed Access-Link State Vector
+# 8. Observed Access-Link State
 
-At time $t$, the observed access-link state of the satellite-to-UE link $(S, U)$ is represented as a 6-dimensional real-valued feature vector:
+At time $t$, the observed access-link state of the satellite-to-UE link $(S, U)$ is represented as an ordered, time-varying **state tuple** containing both scalar values and variable-length vector components:
 
-$$z_t = \begin{bmatrix} |h_t| \\ \text{SNR}_t \\ B_t \\ \alpha_t \\ \tau_{p,t} \\ f_{d,t} \end{bmatrix}^T \in \mathbb{R}^6$$
+$$z_t = \left( \mathbf{h}_{\text{profile},t}, \text{SNR}_t, B_t, \alpha_t, f_{d,t} \right)$$
 
-Where the individual components of the state vector are defined as:
+Alternatively, in linear algebra, this can be written as a **partitioned (concatenated) column vector** of time-varying dimension:
 
-1. **$|h_t|$ (Instantaneous Small-Scale Fading Amplitude)**:
-   The magnitude of the time-varying complex channel coefficient $h_t$ of the access link. This parameter reflects the envelope fluctuations caused by multipath scattering (Rayleigh or Rician distribution).
+$$z_t = \begin{bmatrix} I_{\text{LoS}}(t) \\ \mathbf{a}(t) \\ \boldsymbol{\tau}(t) \\ \text{SNR}_t \\ B_t \\ \alpha_t \\ f_{d,t} \end{bmatrix} \in \mathbb{R}^{2N_p(t) + 5}$$
 
-2. **$\text{SNR}_t$ (Received Signal-to-Noise Ratio)**:
+Where $\mathbf{h}_{\text{profile},t}$ is the **Channel Path Profile sub-tuple** representing the multipath channel state:
+
+$$\mathbf{h}_{\text{profile},t} = \left( I_{\text{LoS}}(t), \mathbf{a}(t), \boldsymbol{\tau}(t) \right)$$
+
+The components of these representations are defined as follows:
+
+### 8.1 Channel Path Profile Components ($\mathbf{h}_{\text{profile},t}$)
+1. **$I_{\text{LoS}}(t)$ (Line-of-Sight Indicator)**:
+   A binary value indicating the presence of the direct path:
+   $$I_{\text{LoS}}(t) = \begin{cases} 1, & \text{Line-of-Sight (LoS) path is active (e.g., Rician fading)} \\ 0, & \text{LoS path is blocked/shadowed (e.g., NLoS Rayleigh fading)} \end{cases}$$
+
+2. **$\mathbf{a}(t)$ (Fading Amplitude Vector)**:
+   The magnitude vector of the time-varying complex path gains for all active paths:
+   $$\mathbf{a}(t) = \begin{bmatrix} |h_{0,t}| \\ |h_{1,t}| \\ \vdots \\ |h_{N_p(t)-1,t}| \end{bmatrix} \in \mathbb{R}^{N_p(t)}$$
+   where $N_p(t)$ is the instantaneous number of active propagation paths.
+
+3. **$\boldsymbol{\tau}(t)$ (One-Way Path Delay Vector)**:
+   The absolute one-way propagation delays (seconds) of each active path:
+   $$\boldsymbol{\tau}(t) = \begin{bmatrix} \tau_{0,t} \\ \tau_{1,t} \\ \vdots \\ \tau_{N_p(t)-1,t} \end{bmatrix} \in \mathbb{R}^{N_p(t)}$$
+   where each delay $\tau_{l,t}$ includes the baseline time-of-flight propagation delay $\tau_{p,t}$ and the relative delay offset $\Delta\tau_l(t)$:
+   $$\tau_{l,t} = \tau_{p,t} + \Delta\tau_l(t)$$
+
+### 8.2 Common Link State Components ($z_t$)
+4. **$\text{SNR}_t$ (Received Signal-to-Noise Ratio)**:
    The instantaneous received signal-to-noise ratio at the terminal at time $t$.
 
-3. **$B_t$ (Occupied Bandwidth)**:
+5. **$B_t$ (Occupied Bandwidth)**:
    The occupied transmission bandwidth (Hz) of the communication link.
 
-4. **$\alpha_t$ (Satellite Elevation Angle)**:
+6. **$\alpha_t$ (Satellite Elevation Angle)**:
    The instantaneous elevation angle of the satellite as seen from the UE's geodetic position.
 
-5. **$\tau_{p,t}$ (One-Way Propagation Delay)**:
-   The one-way time-of-flight delay (seconds) along the slant range $S_U(t)$ between the satellite and the UE:
-   $$\tau_{p,t} = \frac{S_U(t)}{c}$$
-
-6. **$f_{d,t}$ (Doppler Shift)**:
+7. **$f_{d,t}$ (Doppler Shift)**:
    The instantaneous Doppler shift (Hz) caused by the relative motion between the satellite and the UE:
    $$f_{d,t} = -\frac{\mathbf{v}_{rel}(t) \cdot \mathbf{\hat{r}}_{LOS}(t)}{c} f_c$$
 
@@ -288,32 +306,43 @@ In a link-level simulation or machine learning channel prediction framework, the
 ### 9.1 Additional Time-Varying Factors in $z_t$
 While the 6-dimensional vector $z_t$ captures the primary channel characteristics, other physical parameters also vary over time:
 *   **Shadowing / Blockage State ($S_t \in \{\text{LoS}, \text{NLoS}\}$)**: Obstacles (buildings, trees) between the satellite and the UE change dynamically during the pass, causing transitions between Rician (Line-of-Sight) and Rayleigh (Non-Line-of-Sight) fading models.
+*   **Active Channel Paths and Tap Delays ($N_p(t), \tau_{l,t}$)**: The number of active propagation paths (taps) and their arrival delays change dynamically over time:
+    *   In **stochastic geometry-based scenarios** (e.g., Suburban, Urban, Dense Urban), the number of resolvable paths $N_p(t)$ is time-varying. As the UE moves through the local environment, physical paths are blocked (path death) or created by reflections off buildings (path birth).
+    *   Even in standard **Tapped Delay Line (TDL)** profiles (NTN-TDL-A/B/C/D) where the profile defines a fixed number of taps, the absolute physical propagation delay of the $l$-th path $\tau_{l,t}$ drifts continuously:
+        $$\tau_{l,t} = \tau_{p,t} + \Delta\tau_l(t)$$
+        where $\tau_{p,t}$ is the baseline one-way propagation delay of the direct LoS path, and $\Delta\tau_l(t)$ is the time-varying relative delay offset of the $l$-th tap.
 *   **Antenna Gain Variation ($G_t$)**: As the LEO satellite passes overhead, the relative steering angles change, causing the gains of both the satellite beam antenna pattern and the UE antenna to vary over time.
 *   **Polarization Orientation / Mismatch ($\theta_{pol,t}$)**: The rotation of the electric field (Faraday rotation through the ionosphere or antenna orientation changes) causes time-varying polarization mismatch loss.
 
-### 9.2 The Combined Simulation State Matrix
-To simulate or train neural networks on this channel data, we partition the parameters into a static context vector and a dynamic time-series vector:
+### 9.2 The Combined Simulation State Representation
+To simulate or train neural networks on this channel data, we partition the parameters into a static context tuple and a dynamic time-series state tuple:
 
-$$\mathbf{X}_t = \left[ \mathbf{p}_{\text{static}}, z_t \right]$$
+$$\mathbf{X}_t = \left( \mathbf{p}_{\text{static}}, z_t \right)$$
+
+Alternatively, in partitioned vector format for matrix computations:
+
+$$\mathbf{X}_t = \begin{bmatrix} \mathbf{p}_{\text{static}} \\ z_t \end{bmatrix}$$
 
 1. **Static Scenario Hyperparameters ($\mathbf{p}_{\text{static}}$)**:
-   These configure the simulation environment and remain constant during a single run:
+   These configure the simulation environment and remain constant during a single run, represented as the ordered tuple $\mathbf{p}_{\text{static}} = \left( f_c, h_s, v_{\text{UE}, \text{ground}}, \text{SCS}, N_{\text{sc}}, \mathbf{P}_{\text{pilot}}, \text{scenario\_type}, \text{NF} \right)$:
    *   $f_c$: Carrier Frequency (Hz)
    *   $h_s$: Satellite Altitude (m)
    *   $v_{\text{UE}, \text{ground}}$: Velocity of the UE relative to the ground (m/s)
    *   $\text{SCS}$: Subcarrier Spacing (kHz)
    *   $N_{\text{sc}}$: Number of subcarriers in the grid
    *   $\mathbf{P}_{\text{pilot}}$: Pilot configuration (indices, densities, and symbols, e.g., DM-RS positions)
-   *   $\text{profile}$: TDL delay profile layout (e.g., TDL-A, TDL-C)
+   *   $\text{scenario\_type}$: The simulation environment (e.g., Suburban, Urban, Dense Urban) or TDL profile layout (e.g., NTN-TDL-A, TDL-C)
    *   $\text{NF}$: Receiver noise figure (dB)
 
-2. **Dynamic State Vector ($z_t$)**:
-   These are the time-varying, state-dependent variables that change sample-by-sample or slot-by-slot:
-   *   $|h_t|$: Instantaneous small-scale fading amplitude (varies rapidly due to multipath scattering)
-   *   $\text{SNR}_t$: Received signal-to-noise ratio (varies with fast fading, shadowing, and distance)
-   *   $B_t$: Active occupied bandwidth (can change dynamically if bandwidth parts are allocated)
-   *   $\alpha_t$: Satellite elevation angle (sweeps along the S-curve over a multi-second scale)
-   *   $\tau_{p,t}$: Propagation delay (drifts slowly due to slant range change)
-   *   $f_{d,t}$: Instantaneous Doppler shift (sweeps along the S-curve)
+2. **Dynamic State Tuple ($z_t$)**:
+   These are the time-varying, state-dependent variables that change sample-by-sample or slot-by-slot, represented as the ordered tuple $z_t = \left( \mathbf{h}_{\text{profile},t}, \text{SNR}_t, B_t, \alpha_t, f_{d,t} \right)$:
+   *   $\mathbf{h}_{\text{profile},t}$: Channel Path Profile sub-tuple, which groups path-specific variables $\mathbf{h}_{\text{profile},t} = \left( I_{\text{LoS}}(t), \mathbf{a}(t), \boldsymbol{\tau}(t) \right)$:
+       *   $I_{\text{LoS}}(t)$: Binary indicator of whether the direct LoS path is active ($1$) or blocked/shadowed ($0$).
+       *   $\mathbf{a}(t)$: Fading amplitude vector ($|h_{l,t}|$ of each path).
+       *   $\boldsymbol{\tau}(t)$: Absolute 1-way delay vector ($\tau_{l,t}$ of each path).
+   *   $\text{SNR}_t$: Received signal-to-noise ratio (varies with fast fading, shadowing, and distance).
+   *   $B_t$: Active occupied bandwidth (can change dynamically if bandwidth parts are allocated).
+   *   $\alpha_t$: Satellite elevation angle (sweeps along the S-curve over a multi-second scale).
+   *   $f_{d,t}$: Instantaneous Doppler shift (sweeps along the S-curve).
 
-In machine learning architectures (such as LSTMs or Transformers for channel prediction), the static parameters $\mathbf{p}_{\text{static}}$ act as **context embeddings** that select or adapt the model's weights, whereas the model dynamically tracks and forecasts the trajectories of the time-series vector $z_t$. 
+In machine learning architectures (such as LSTMs or Transformers for channel prediction), the static parameters $\mathbf{p}_{\text{static}}$ act as **context embeddings** that select or adapt the model's weights, whereas the model dynamically tracks and forecasts the trajectories of the time-series tuple $z_t$. 
