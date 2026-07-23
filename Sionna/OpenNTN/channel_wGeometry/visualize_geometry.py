@@ -6,10 +6,14 @@
 
 import os
 import io
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from PIL import Image
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from helper import ecef_to_enu, get_satellite_state_ecef, get_local_earth_patch
 
 # =========================================================================
 # 1. CONFIGURATION PARAMETERS
@@ -126,38 +130,10 @@ doppler_all = np.zeros(N_steps)
 doppler_beam_all = np.zeros(N_steps)
 
 for k, t in enumerate(time_grid):
-    # Earth rotation angle (GST) at time t
-    theta_G = omega_E * t
-    R_z = np.array([
-        [ np.cos(theta_G), np.sin(theta_G), 0.0],
-        [-np.sin(theta_G), np.cos(theta_G), 0.0],
-        [ 0.0,             0.0,             1.0]
-    ])
-    
-    # Satellite position & velocity in ECI
-    u_t = omega_s * (t - t_mid) + u_mid
-    
-    r_sat_ECI = np.array([
-        r_orbit * (np.cos(u_t)*np.cos(Omega_RAAN) - np.sin(u_t)*np.sin(Omega_RAAN)*np.cos(inclination)),
-        r_orbit * (np.cos(u_t)*np.sin(Omega_RAAN) + np.sin(u_t)*np.cos(Omega_RAAN)*np.cos(inclination)),
-        r_orbit * np.sin(u_t)*np.sin(inclination)
-    ])
-
-    v_sat_ECI = np.array([
-        v_sat_orbit * (-np.sin(u_t)*np.cos(Omega_RAAN) - np.cos(u_t)*np.sin(Omega_RAAN)*np.cos(inclination)),
-        v_sat_orbit * (-np.sin(u_t)*np.sin(Omega_RAAN) + np.cos(u_t)*np.cos(Omega_RAAN)*np.cos(inclination)),
-        v_sat_orbit * np.cos(u_t)*np.sin(inclination)
-    ])
-    
-    # Convert Satellite position and velocity to ECEF (accounts for Coriolis term)
-    r_sat_ECEF = R_z @ r_sat_ECI
-    
-    omega_cross_r = np.array([
-        -omega_E * r_sat_ECI[1],
-         omega_E * r_sat_ECI[0],
-         0.0
-    ])
-    v_sat_ECEF = R_z @ (v_sat_ECI - omega_cross_r)
+    # Compute satellite position and velocity in ECEF
+    r_sat_ECEF, v_sat_ECEF = get_satellite_state_ecef(
+        t - t_mid, omega_s, u_mid, Omega_RAAN, inclination, r_orbit, v_sat_orbit, omega_E
+    )
     
     sat_ECEF_all[:, k] = r_sat_ECEF
     sat_vel_ECEF_all[:, k] = v_sat_ECEF
@@ -224,18 +200,10 @@ fig1 = plt.figure(num='3D NTN Geometry Simulation', figsize=(8.5, 8.0), facecolo
 ax1 = fig1.add_subplot(111, projection='3d')
 ax1.set_facecolor('white')
 
-# Draw Earth sphere (Optimized: 20x20 mesh for 5x faster rendering)
-u_sp = np.linspace(0, 2 * np.pi, 20)
-v_sp = np.linspace(0, np.pi, 20)
-XS = a * np.outer(np.cos(u_sp), np.sin(v_sp))
-YS = a * np.outer(np.sin(u_sp), np.sin(v_sp))
-ZS = a * np.outer(np.ones(np.size(u_sp)), np.cos(v_sp))
+# Draw Earth surface patch (rather than full sphere)
+# centered around the UE longitude (lambda_UE) and latitude (phi_UE)
+XS, YS, ZS = get_local_earth_patch(lambda_UE, phi_UE, a, delta_deg=12.0, num_pts=30)
 surf_earth = ax1.plot_surface(XS, YS, ZS, color=earth_color, edgecolor=grid_color, alpha=0.6, linewidth=0.25)
-
-# Draw Equator & Prime Meridian
-t_pm = np.linspace(0, 2 * np.pi, 100)
-ax1.plot(a * np.cos(t_pm), a * np.sin(t_pm), np.zeros_like(t_pm), color=(0.3, 0.4, 0.5), linewidth=1.0)
-ax1.plot(a * np.cos(t_pm), np.zeros_like(t_pm), a * np.sin(t_pm), color=(0.3, 0.4, 0.5), linewidth=0.5)
 
 # Plot static paths
 plot_orbit, = ax1.plot(sat_ECEF_all[0, :], sat_ECEF_all[1, :], sat_ECEF_all[2, :], 
