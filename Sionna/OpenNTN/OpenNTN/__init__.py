@@ -16,12 +16,14 @@ from .system_level_scenario import SystemLevelScenario
 from .channel_coefficients import Topology, ChannelCoefficientsGenerator
 from .system_level_channel import SystemLevelChannel
 
-from .dense_urban_scenario import DenseUrbanScenario
-from .dense_urban import DenseUrban
-from .urban_scenario import UrbanScenario
-from .urban import Urban
-from .sub_urban_scenario import SubUrbanScenario
-from .sub_urban import SubUrban
+from .dense_urban_scenario import DenseUrbanScenario, DenseUrbanScenario_modify
+from .dense_urban import DenseUrban, DenseUrban_modify
+from .urban_scenario import UrbanScenario, UrbanScenario_modify
+from .urban import Urban, Urban_modify
+from .sub_urban_scenario import SubUrbanScenario, SubUrbanScenario_modify
+from .sub_urban import SubUrban, SubUrban_modify
+from .channel_coefficients import Topology_modify, ChannelCoefficientsGenerator_modify
+from .system_level_channel import SystemLevelChannel_modify
 # TDL and CDL are not yet implemented and only exist here as a template
 from .tdl import TDL
 from .cdl import CDL

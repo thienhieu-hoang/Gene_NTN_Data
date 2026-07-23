@@ -944,3 +944,31 @@ class SystemLevelScenario(Object):
         pass
 
 
+class SystemLevelScenario_modify(SystemLevelScenario):
+    def __init__(self, carrier_frequency, ut_array, bs_array, direction,
+                 elevation_angle, enable_pathloss=True, enable_shadow_fading=True,
+                 doppler_enabled=True, doppler_mode='full', precision=None):
+        super().__init__(carrier_frequency, ut_array, bs_array, direction,
+                         elevation_angle, enable_pathloss, enable_shadow_fading,
+                         doppler_enabled, precision)
+        self._doppler_mode = doppler_mode
+        self._bs_velocities = None
+
+    @property
+    def bs_velocities(self):
+        return self._bs_velocities
+
+    @property
+    def doppler_mode(self):
+        return self._doppler_mode
+
+    def set_topology_modify(self, ut_loc=None, bs_loc=None, ut_orientations=None,
+                            bs_orientations=None, ut_velocities=None, bs_velocities=None,
+                            in_state=None, los=None):
+        if bs_velocities is not None:
+            self._bs_velocities = bs_velocities
+        return self.set_topology(ut_loc, bs_loc, ut_orientations, bs_orientations,
+                                 ut_velocities, in_state, los)
+
+
+

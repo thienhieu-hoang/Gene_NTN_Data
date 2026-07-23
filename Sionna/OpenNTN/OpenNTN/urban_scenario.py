@@ -274,3 +274,17 @@ class UrbanScenario(SystemLevelScenario):
 
     def _compute_pathloss_basic(self):
         utils.compute_pathloss_basic(self)
+
+
+from .system_level_scenario import SystemLevelScenario_modify
+
+class UrbanScenario_modify(UrbanScenario, SystemLevelScenario_modify):
+    def __init__(self, carrier_frequency, ut_array, bs_array, direction,
+                 elevation_angle, enable_pathloss=True, enable_shadow_fading=True,
+                 average_street_width=20.0, average_building_height=5.0,
+                 doppler_enabled=True, doppler_mode='full', precision=None):
+        SystemLevelScenario_modify.__init__(self, carrier_frequency, ut_array, bs_array,
+                                             direction, elevation_angle, enable_pathloss,
+                                             enable_shadow_fading, doppler_enabled, doppler_mode, precision)
+        self._average_street_width = tf.constant(average_street_width, self.rdtype)
+        self._average_building_height = tf.constant(average_building_height, self.rdtype)

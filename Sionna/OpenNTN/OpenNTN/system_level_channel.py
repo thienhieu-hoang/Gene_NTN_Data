@@ -429,3 +429,136 @@ class SystemLevelChannel(ChannelModel):
         h *= tf.complex(gain, tf.constant(0., self.rdtype))
 
         return h
+
+
+class SystemLevelChannel_modify(SystemLevelChannel):
+    def __init__(self, scenario, always_generate_lsp=False, precision=None):
+        super().__init__(scenario, always_generate_lsp, precision)
+        
+        if scenario.direction == "uplink":
+            tx_array = scenario.ut_array
+            rx_array = scenario.bs_array
+        elif scenario.direction == "downlink":
+            tx_array = scenario.bs_array
+            rx_array = scenario.ut_array
+            
+        from .channel_coefficients import ChannelCoefficientsGenerator_modify
+        self._cir_sampler = ChannelCoefficientsGenerator_modify(
+                                            scenario.carrier_frequency,
+                                            tx_array, rx_array,
+                                            subclustering=True,
+                                            precision=self.precision)
+
+    def set_topology(self, ut_loc=None, bs_loc=None, ut_orientations=None,
+                     bs_orientations=None, ut_velocities=None, bs_velocities=None,
+                     in_state=None, los=None):
+        if hasattr(self._scenario, 'set_topology_modify'):
+            need_for_update = self._scenario.set_topology_modify(
+                                                            ut_loc,
+                                                            bs_loc,
+                                                            ut_orientations,
+                                                            bs_orientations,
+                                                            ut_velocities,
+                                                            bs_velocities,
+                                                            in_state,
+                                                            los)
+        else:
+            need_for_update = self._scenario.set_topology(  ut_loc,
+                                                            bs_loc,
+                                                            ut_orientations,
+                                                            bs_orientations,
+                                                            ut_velocities,
+                                                            in_state,
+                                                            los)
+
+        if need_for_update:
+            self._lsp_sampler.topology_updated_callback()
+            self._ray_sampler.topology_updated_callback()
+            if not self._always_generate_lsp:
+                self._lsp = self._lsp_sampler()
+
+        if not self._set_topology_called:
+            self._set_topology_called = True
+
+    def __call__(self, num_time_samples, sampling_frequency, foo=None):
+        if foo is not None:
+            num_time_samples = sampling_frequency
+            sampling_frequency = foo
+
+        if self._always_generate_lsp:
+            lsp = self._lsp_sampler()
+        else:
+            lsp = self._lsp
+
+        rays = self._ray_sampler(lsp)
+
+        if self._scenario.direction == 'downlink':
+            moving_end = 'rx'
+            tx_orientations = self._scenario.bs_orientations
+            rx_orientations = self._scenario.ut_orientations
+        elif self._scenario.direction == 'uplink':
+            moving_end = 'tx'
+            tx_orientations = self._scenario.ut_orientations
+            rx_orientations = self._scenario.bs_orientations
+
+        from .channel_coefficients import Topology_modify
+        topology = Topology_modify(
+                                velocities=self._scenario.ut_velocities,
+                                bs_velocities=getattr(self._scenario, 'bs_velocities', None),
+                                moving_end=moving_end,
+                                los_aoa=deg_2_rad(self._scenario.los_aoa),
+                                los_aod=deg_2_rad(self._scenario.los_aod),
+                                los_zoa=deg_2_rad(self._scenario.los_zoa),
+                                los_zod=deg_2_rad(self._scenario.los_zod),
+                                los=self._scenario.los,
+                                distance_3d=self._scenario.distance_3d,
+                                tx_orientations=tx_orientations,
+                                rx_orientations=rx_orientations,
+                                bs_height = self._scenario._bs_loc[:,:,2][0],
+                                elevation_angle = self._scenario.elevation_angle,
+                                doppler_enabled = self._scenario.doppler_enabled,
+                                doppler_mode = getattr(self._scenario, 'doppler_mode', 'full')
+                                )
+
+        c_ds = self._scenario.get_param("cDS")*1e-9
+
+        if self._scenario.direction == "uplink":
+            aoa = rays.aoa
+            zoa = rays.zoa
+            aod = rays.aod
+            zod = rays.zod
+            rays.aod = tf.transpose(aoa, [0, 2, 1, 3, 4])
+            rays.zod = tf.transpose(zoa, [0, 2, 1, 3, 4])
+            rays.aoa = tf.transpose(aod, [0, 2, 1, 3, 4])
+            rays.zoa = tf.transpose(zod, [0, 2, 1, 3, 4])
+            rays.powers = tf.transpose(rays.powers, [0, 2, 1, 3])
+            rays.delays = tf.transpose(rays.delays, [0, 2, 1, 3])
+            rays.xpr = tf.transpose(rays.xpr, [0, 2, 1, 3, 4])
+            los_aod = topology.los_aod
+            los_aoa = topology.los_aoa
+            los_zod = topology.los_zod
+            los_zoa = topology.los_zoa
+            topology.los_aoa = tf.transpose(los_aod, [0, 2, 1])
+            topology.los_aod = tf.transpose(los_aoa, [0, 2, 1])
+            topology.los_zoa = tf.transpose(los_zod, [0, 2, 1])
+            topology.los_zod = tf.transpose(los_zoa, [0, 2, 1])
+            topology.los = tf.transpose(topology.los, [0, 2, 1])
+            c_ds = tf.transpose(c_ds, [0, 2, 1])
+            topology.distance_3d = tf.transpose(topology.distance_3d, [0, 2, 1])
+            k_factor = tf.transpose(lsp.k_factor, [0, 2, 1])
+            sf = tf.transpose(lsp.sf, [0, 2, 1])
+        else:
+            k_factor = lsp.k_factor
+            sf = lsp.sf
+
+        h, delays = self._cir_sampler(num_time_samples, sampling_frequency,
+                                      k_factor, rays, topology, c_ds)
+
+        h = self._step_12(h, sf)
+        h = tf.transpose(h, [0, 2, 4, 1, 5, 3, 6])
+        delays = tf.transpose(delays, [0, 2, 1, 3])
+
+        h = tf.stop_gradient(h)
+        delays = tf.stop_gradient(delays)
+        return h, delays
+

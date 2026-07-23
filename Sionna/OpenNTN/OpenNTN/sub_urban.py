@@ -137,3 +137,20 @@ class SubUrban(SystemLevelChannel):
             average_street_width, average_building_height, doppler_enabled, precision=precision)
 
         super().__init__(scenario, always_generate_lsp)
+
+
+from .system_level_channel import SystemLevelChannel_modify
+from .sub_urban_scenario import SubUrbanScenario_modify
+
+class SubUrban_modify(SystemLevelChannel_modify):
+    def __init__(self, carrier_frequency, ut_array, bs_array,
+        direction, elevation_angle, enable_pathloss=True, enable_shadow_fading=True,
+        average_street_width=20.0, average_building_height=5.0,
+        always_generate_lsp=False, doppler_enabled=True, doppler_mode='full', precision=None):
+        
+        scenario = SubUrbanScenario_modify(carrier_frequency, ut_array, bs_array,
+            direction, elevation_angle, enable_pathloss, enable_shadow_fading,
+            average_street_width, average_building_height, doppler_enabled, doppler_mode, precision=precision)
+            
+        super().__init__(scenario, always_generate_lsp)
+

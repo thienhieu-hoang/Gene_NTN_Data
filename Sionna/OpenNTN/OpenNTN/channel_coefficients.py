@@ -1117,3 +1117,82 @@ class ChannelCoefficientsGenerator(Object):
         shape = tf.concat([tf.shape(faraday_cos), [2,2]], axis=-1)
         faraday_phase_rot = tf.reshape(tf.stack([faraday_cos, faraday_minus_sin, faraday_sin, faraday_cos], axis=-1), shape)
         return faraday_phase_rot
+
+
+class Topology_modify(Topology):
+    def __init__(self, velocities, bs_velocities, moving_end, los_aoa, los_aod, los_zoa, los_zod,
+                 los, distance_3d, tx_orientations, rx_orientations,
+                 bs_height, elevation_angle, doppler_enabled, doppler_mode='full'):
+        self.velocities = velocities
+        self.bs_velocities = bs_velocities
+        self.moving_end = moving_end
+        self.los_aoa = los_aoa
+        self.los_aod = los_aod
+        self.los_zoa = los_zoa
+        self.los_zod = los_zod
+        self.los = los
+        self.tx_orientations = tx_orientations
+        self.rx_orientations = rx_orientations
+        self.distance_3d = distance_3d
+        self.bs_height = bs_height
+        self.elevation_angle = elevation_angle
+        self.doppler_enabled = doppler_enabled
+        self.doppler_mode = doppler_mode
+        self.sat_speed = None
+
+
+class ChannelCoefficientsGenerator_modify(ChannelCoefficientsGenerator):
+    def _step_11_doppler_matrix(self, topology, aoa, zoa, aod, zod, t):
+        lambda_0 = self._lambda_0
+        ut_velocities = topology.velocities
+
+        v_uts_bar = ut_velocities
+        v_uts_bar = tf.expand_dims(v_uts_bar, axis=-1)
+
+        if topology.moving_end == 'rx':
+            v_uts_bar = tf.expand_dims(v_uts_bar, 1)
+            r_hat_ut = self._unit_sphere_vector(zoa, aoa)
+        elif topology.moving_end == 'tx':
+            v_uts_bar = tf.expand_dims(v_uts_bar, 2)
+            r_hat_ut = self._unit_sphere_vector(zod, aod)
+
+        v_uts_bar = tf.expand_dims(tf.expand_dims(v_uts_bar, -3), -3)
+        exponent = 2*PI/lambda_0 * tf.reduce_sum(r_hat_ut*v_uts_bar, -2) * t
+
+        is_ntn = tf.less_equal(600000.0, topology.bs_height)
+        doppler_mode = getattr(topology, 'doppler_mode', 'full')
+        bs_velocities = getattr(topology, 'bs_velocities', None)
+
+        if is_ntn and doppler_mode in ('full', 'precompensated') and bs_velocities is not None:
+            v_sat_bar = bs_velocities
+            v_sat_bar = tf.expand_dims(v_sat_bar, axis=-1)
+            v_sat_bar = tf.expand_dims(v_sat_bar, 2)
+            v_sat_bar = tf.expand_dims(tf.expand_dims(v_sat_bar, -3), -3)
+
+            r_hat_sat_cl = self._unit_sphere_vector(zod, aod)
+            exp_sat_cl = 2*PI/lambda_0 * tf.reduce_sum(r_hat_sat_cl * v_sat_bar, -2) * t
+
+            if doppler_mode == 'full':
+                exponent = exponent + exp_sat_cl
+            elif doppler_mode == 'precompensated':
+                los_zod_exp = tf.expand_dims(tf.expand_dims(topology.los_zod, -1), -1)
+                los_aod_exp = tf.expand_dims(tf.expand_dims(topology.los_aod, -1), -1)
+                r_hat_los = self._unit_sphere_vector(los_zod_exp, los_aod_exp)
+                exp_sat_los = 2*PI/lambda_0 * tf.reduce_sum(r_hat_los * v_sat_bar, -2) * t
+                exponent = exponent + (exp_sat_cl - exp_sat_los)
+        
+        elif is_ntn and topology.doppler_enabled and bs_velocities is None:
+            max_sat_speed_for_elevation_angle = topology.sat_speed
+            if max_sat_speed_for_elevation_angle is not None:
+                max_rotation_per_time = (2.0*PI/lambda_0)*max_sat_speed_for_elevation_angle
+                rotation_for_time = tf.matmul(tf.expand_dims(max_rotation_per_time,axis=1), tf.expand_dims(t,axis=0))
+                rotation_for_time = tf.expand_dims(rotation_for_time, [1])
+                rotation_for_time = tf.expand_dims(rotation_for_time, [1])
+                rotation_for_time = tf.expand_dims(rotation_for_time, [1])
+                rotation_for_time = tf.expand_dims(rotation_for_time, [1])
+                rotation_for_time = tf.broadcast_to(rotation_for_time, tf.shape(exponent))
+                exponent = tf.math.add(exponent, rotation_for_time)
+
+        h_doppler = tf.exp(tf.complex(tf.constant(0., self.rdtype), exponent))
+        return h_doppler
+

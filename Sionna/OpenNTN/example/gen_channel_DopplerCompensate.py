@@ -35,6 +35,7 @@ import sys
 # Resolve the project root directory relative to this script's path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from OpenNTN import DenseUrban, Urban, SubUrban
+from helper import save_simulation_readme
 from OpenNTN.utils import gen_single_sector_topology as gen_ntn_topology
 
 scenario = "dur" # dur, sur, urb
@@ -258,26 +259,9 @@ avg_delay_spread_ns = np.mean(delay_spreads_all) * 1e9 if len(delay_spreads_all)
 
 # Save the scenario configurations and delay spread to a markdown note file
 md_filename = os.path.join(output_dir, f"readme_{scenario}.md")
-md_content = f"""# Channel Generation Settings - {scenario.upper()}
-
-- **Scenario Type**: {scenario.upper()} (dur = Dense Urban, sur = SubUrban, urb = Urban)
-- **Carrier Frequency**: {carrier_frequency / 1e9:.2f} GHz
-- **Link Direction**: {direction}
-- **Satellite Elevation Angle**: {elevation_angle} degrees
-- **Satellite (LEO) Height**: {satellite_height / 1000:.0f} km
-- **UE Ground Speed**: {ue_speed} m/s
-- **Subcarrier Spacing (SCS)**: {SCS / 1e3:.0f} kHz
-- **FFT Size**: {nFFT}
-- **Active Subcarriers**: 132 (out of {nFFT})
-- **SNR (for LS estimation)**: {SNR_dB} dB
-- **Total OFDM Symbols**: 14
-- **Pilot Symbols (0-indexed)**: [2, 7, 11]
-- **Total Samples Generated**: {N_samples}
-- **Average RMS Delay Spread**: {avg_delay_spread_ns:.2f} ns
-"""
-
-with open(md_filename, "w") as f:
-    f.write(md_content)
-print(f"Saved scenario parameters documentation to {md_filename}")
+save_simulation_readme(
+    md_filename, scenario, carrier_frequency, direction, elevation_angle,
+    satellite_height, ue_speed, SCS, nFFT, SNR_dB, N_samples, avg_delay_spread_ns
+)
 
     

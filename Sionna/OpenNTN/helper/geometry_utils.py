@@ -139,3 +139,31 @@ def get_local_earth_patch(lambda_ref, phi_ref, a_earth, delta_deg=12.0, num_pts=
             ZS[idx_lat, idx_lon] = a_earth * np.sin(lat)
             
     return XS, YS, ZS
+
+
+def save_simulation_readme(filename, scenario, carrier_frequency, direction, elevation_angle, 
+                            satellite_height, ue_speed, scs, n_fft, snr_db, n_samples, avg_delay_spread_ns):
+    """
+    Save channel simulation configuration parameters and results into a markdown documentation file.
+    """
+    md_content = f"""# Channel & Geometry Generation Settings - {scenario.upper()}
+
+- **Scenario Type**: {scenario.upper()} (dur = Dense Urban, sur = SubUrban, urb = Urban)
+- **Carrier Frequency**: {carrier_frequency / 1e9:.2f} GHz
+- **Link Direction**: {direction}
+- **Satellite Elevation Angle**: {elevation_angle:.2f} degrees
+- **Satellite (LEO) Height**: {satellite_height / 1000:.0f} km
+- **UE Ground Speed**: {ue_speed} m/s
+- **Subcarrier Spacing (SCS)**: {scs / 1e3:.0f} kHz
+- **FFT Size**: {n_fft}
+- **Active Subcarriers**: 132 (out of {n_fft})
+- **SNR (for LS estimation)**: {snr_db} dB
+- **Total OFDM Symbols**: 14
+- **Pilot Symbols (0-indexed)**: [2, 7, 11]
+- **Total Samples Generated**: {n_samples}
+- **Average RMS Delay Spread**: {avg_delay_spread_ns:.2f} ns
+"""
+    with open(filename, "w") as f:
+        f.write(md_content)
+    print(f"Saved scenario parameters documentation to {filename}")
+
