@@ -953,6 +953,7 @@ class SystemLevelScenario_modify(SystemLevelScenario):
                          doppler_enabled, precision)
         self._doppler_mode = doppler_mode
         self._bs_velocities = None
+        self._beam_center = None
 
     @property
     def bs_velocities(self):
@@ -961,6 +962,13 @@ class SystemLevelScenario_modify(SystemLevelScenario):
     @property
     def doppler_mode(self):
         return self._doppler_mode
+
+    @property
+    def beam_center(self):
+        return self._beam_center
+
+    def set_beam_center(self, beam_center):
+        self._beam_center = tf.constant(beam_center, dtype=self.rdtype)
 
     def set_topology_modify(self, ut_loc=None, bs_loc=None, ut_orientations=None,
                             bs_orientations=None, ut_velocities=None, bs_velocities=None,

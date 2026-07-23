@@ -1122,7 +1122,7 @@ class ChannelCoefficientsGenerator(Object):
 class Topology_modify(Topology):
     def __init__(self, velocities, bs_velocities, moving_end, los_aoa, los_aod, los_zoa, los_zod,
                  los, distance_3d, tx_orientations, rx_orientations,
-                 bs_height, elevation_angle, doppler_enabled, doppler_mode='full'):
+                 bs_height, elevation_angle, doppler_enabled, doppler_mode='full', r_hat_bc=None):
         self.velocities = velocities
         self.bs_velocities = bs_velocities
         self.moving_end = moving_end
@@ -1138,6 +1138,7 @@ class Topology_modify(Topology):
         self.elevation_angle = elevation_angle
         self.doppler_enabled = doppler_enabled
         self.doppler_mode = doppler_mode
+        self.r_hat_bc = r_hat_bc
         self.sat_speed = None
 
 
@@ -1175,9 +1176,12 @@ class ChannelCoefficientsGenerator_modify(ChannelCoefficientsGenerator):
             if doppler_mode == 'full':
                 exponent = exponent + exp_sat_cl
             elif doppler_mode == 'precompensated':
-                los_zod_exp = tf.expand_dims(tf.expand_dims(topology.los_zod, -1), -1)
-                los_aod_exp = tf.expand_dims(tf.expand_dims(topology.los_aod, -1), -1)
-                r_hat_los = self._unit_sphere_vector(los_zod_exp, los_aod_exp)
+                if getattr(topology, 'r_hat_bc', None) is not None:
+                    r_hat_los = topology.r_hat_bc
+                else:
+                    los_zod_exp = tf.expand_dims(tf.expand_dims(topology.los_zod, -1), -1)
+                    los_aod_exp = tf.expand_dims(tf.expand_dims(topology.los_aod, -1), -1)
+                    r_hat_los = self._unit_sphere_vector(los_zod_exp, los_aod_exp)
                 exp_sat_los = 2*PI/lambda_0 * tf.reduce_sum(r_hat_los * v_sat_bar, -2) * t
                 exponent = exponent + (exp_sat_cl - exp_sat_los)
         

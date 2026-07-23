@@ -449,6 +449,10 @@ class SystemLevelChannel_modify(SystemLevelChannel):
                                             subclustering=True,
                                             precision=self.precision)
 
+    def set_beam_center(self, beam_center):
+        if hasattr(self._scenario, 'set_beam_center'):
+            self._scenario.set_beam_center(beam_center)
+
     def set_topology(self, ut_loc=None, bs_loc=None, ut_orientations=None,
                      bs_orientations=None, ut_velocities=None, bs_velocities=None,
                      in_state=None, los=None):
@@ -502,6 +506,16 @@ class SystemLevelChannel_modify(SystemLevelChannel):
             rx_orientations = self._scenario.bs_orientations
 
         from .channel_coefficients import Topology_modify
+        r_hat_bc = None
+        if getattr(self._scenario, 'beam_center', None) is not None:
+            bs_loc = self._scenario.bs_loc
+            bc_loc = self._scenario.beam_center
+            d_vector = tf.expand_dims(bc_loc, 1) - bs_loc
+            d_norm = tf.norm(d_vector, axis=-1, keepdims=True)
+            r_hat_bc_base = d_vector / d_norm
+            r_hat_bc = tf.expand_dims(r_hat_bc_base, 1)
+            r_hat_bc = tf.expand_dims(tf.expand_dims(r_hat_bc, -1), -1)
+
         topology = Topology_modify(
                                 velocities=self._scenario.ut_velocities,
                                 bs_velocities=getattr(self._scenario, 'bs_velocities', None),
@@ -517,7 +531,8 @@ class SystemLevelChannel_modify(SystemLevelChannel):
                                 bs_height = self._scenario._bs_loc[:,:,2][0],
                                 elevation_angle = self._scenario.elevation_angle,
                                 doppler_enabled = self._scenario.doppler_enabled,
-                                doppler_mode = getattr(self._scenario, 'doppler_mode', 'full')
+                                doppler_mode = getattr(self._scenario, 'doppler_mode', 'full'),
+                                r_hat_bc = r_hat_bc
                                 )
 
         c_ds = self._scenario.get_param("cDS")*1e-9
