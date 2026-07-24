@@ -321,7 +321,7 @@ h_interp_comp_batch = np.stack(h_interp_comp_batch, axis=0) # [1, 14, 132]
 
 # Set up dynamically named results directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
-dir_name = f"{scenario.upper()}_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km_{int(ue_speed)}ms_{int(SNR_dB)}dB"
+dir_name = f"{scenario.upper()}_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km_{int(ue_speed)}mps_{int(SNR_dB)}dB"
 output_dir = os.path.join(script_dir, "results", dir_name)
 os.makedirs(output_dir, exist_ok=True)
 
@@ -416,6 +416,21 @@ try:
     sat_path_ECEF = np.array(sat_path_ECEF).T
     ue_path_ECEF = np.array(ue_path_ECEF).T
 
+    # Generate Beam Footprint circle (15 km radius) in ENU and rotate to ECEF
+    r_beam = 15000.0  # 15 km beam radius
+    theta_circle = np.linspace(0, 2 * np.pi, 100)
+    circle_ENU = np.zeros((3, 100))
+    circle_ENU[0] = r_beam * np.cos(theta_circle)
+    circle_ENU[1] = r_beam * np.sin(theta_circle)
+    circle_ENU[2] = 0.0  # ground plane
+    
+    # Convert to ECEF relative to r_ue_ECEF_0
+    circle_ECEF = r_ue_ECEF_0[:, np.newaxis] + R_ENU2ECEF @ circle_ENU
+    # Project to ellipsoid surface
+    norm_r_ue_0 = np.linalg.norm(r_ue_ECEF_0)
+    for i in range(100):
+        circle_ECEF[:, i] = circle_ECEF[:, i] * (norm_r_ue_0 / np.linalg.norm(circle_ECEF[:, i]))
+
     # Create ECEF 3D Plot
     fig_ecef = plt.figure(figsize=(10, 8), facecolor='white')
     ax_ecef = fig_ecef.add_subplot(111, projection='3d')
@@ -430,6 +445,10 @@ try:
     # Plot Orbit Path and UE Path
     ax_ecef.plot(sat_path_ECEF[0], sat_path_ECEF[1], sat_path_ECEF[2], '--', color=(0.85, 0.60, 0.05), linewidth=1.5, label='LEO Orbit (ECEF)')
     ax_ecef.plot(ue_path_ECEF[0], ue_path_ECEF[1], ue_path_ECEF[2], '-', color=(0.85, 0.20, 0.20), linewidth=2, label='UE Path')
+
+    # Draw Beam Footprint and Beam Center
+    ax_ecef.plot(circle_ECEF[0], circle_ECEF[1], circle_ECEF[2], color='purple', linewidth=2, label='Beam Footprint (15 km radius)')
+    ax_ecef.scatter(r_ue_ECEF_0[0], r_ue_ECEF_0[1], r_ue_ECEF_0[2], color='purple', marker='X', s=120, edgecolor='w', label='Beam Center')
 
     # Plot current position at t=0
     ax_ecef.scatter(r_sat_ECEF[0], r_sat_ECEF[1], r_sat_ECEF[2], color=(0.85, 0.60, 0.05), s=150, edgecolor='w', label='LEO Satellite')
@@ -484,6 +503,10 @@ try:
 
     # Plot the UE as a point
     ax.scatter(ut_loc_ENU[0], ut_loc_ENU[1], ut_loc_ENU[2], color='red', s=100, label='User Equipment (UE)')
+
+    # Draw Beam Footprint circle and Beam Center
+    ax.plot(circle_ENU[0], circle_ENU[1], np.zeros_like(circle_ENU[0]), color='purple', linewidth=2, linestyle='-', label='Beam Footprint (15 km)')
+    ax.scatter(0, 0, 0, color='purple', marker='X', s=120, edgecolor='w', label='Beam Center')
 
     # Plot the Satellite as a point
     ax.scatter(bs_loc_ENU[0], bs_loc_ENU[1], bs_loc_ENU[2], color='blue', s=200, label='LEO Satellite')
