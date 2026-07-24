@@ -24,7 +24,7 @@ The heading direction is defined as:
 
 ### C. Mathematical Trajectory
 1. The heading is converted to local **East-North-Up (ENU)** velocity components:
-   $$\vec{v}_{\text{UE, ENU}} = [v_{\text{speed}} \sin(\theta_{\text{heading}}), \  v_{\text{speed}} \cos(\theta_{\text{heading}}), \  0.0]$$
+   $$\vec{v}_{\text{UE, ENU}} = [v_{\text{speed}} \sin(\theta_{\text{heading}}), \  v_{\text{speed}} \cos(\theta_{\text{heading}}), \  0.0]^T$$
 2. It is rotated into the global **ECEF** frame:
    $$\vec{v}_{\text{UE, ECEF}} = \mathbf{R}_{\text{ENU}\to\text{ECEF}} \cdot \vec{v}_{\text{UE, ENU}}$$
 3. The UE's position at any time $t$ relative to the start is:
@@ -40,7 +40,7 @@ The satellite moves in a circular Keplerian orbit around the Earth, while the Ea
 ### A. Configuration Parameters
 * `satellite_height`: Orbit altitude above the Earth's surface (e.g., `600,000 m` or `600 km`). This determines:
   * **Orbital radius**: $r_{\text{orbit}} = R_{\text{Earth}} + h_{\text{satellite}}$
-  * **Orbital speed**: $v_{\text{orbit}} = \sqrt{\mu / r_{\text{orbit}}} \approx 7.5\text{ km/s}$
+  * **Orbital speed**: $v_{\text{orbit}} = \sqrt{\mu / r_{\text{orbit}}} \approx 7.56\text{ km/s}$
   * **Angular speed**: $\omega_s = \sqrt{\mu / r_{\text{orbit}}^3}$
 * `inclination_deg`: The tilt of the orbit plane relative to the Earth's equator (e.g., `55.0°`).
 
@@ -65,66 +65,40 @@ As time progresses, the Earth rotates under the satellite's orbit at $\omega_E =
 $$\vec{r}_{\text{sat, ECEF}}(t) = \mathbf{R}_z(\omega_E \cdot t) \cdot \vec{r}_{\text{sat, ECI}}(t)$$
 where $\vec{r}_{\text{sat, ECI}}(t)$ is the inertial orbital position vector.
 
-### E. Understanding the Argument of Latitude ($u$) and Heading Directions
-The **Argument of Latitude ($u$)** defines the satellite's position along the orbit circle, starting from the **Ascending Node** (Equator crossing going North). 
+---
 
-To understand which direction the satellite is traveling relative to the ground, we convert this position angle $u$ to a compass **Azimuth angle ($Az$)**.
+## 3. Global ECEF to Local Tangent Frame (ENU) Transformation
 
-#### 1. What is the Azimuth Angle ($Az$)?
-The Azimuth is the compass heading direction of the satellite's velocity vector, measured in degrees clockwise from North:
-* **$0^\circ$**: Heading due **North**
-* **$90^\circ$**: Heading due **East**
-* **$180^\circ$**: Heading due **South**
-* **$270^\circ$**: Heading due **West**
+The primary global coordinate system used to derive orbital mechanics and global positioning is the **Earth-Centered Earth-Fixed (ECEF)** frame $(X, Y, Z)$. However, for wireless channel coefficient generation and ray-tracing (angle of arrival/departure), coordinates and velocity vectors are transformed into the **local East-North-Up (ENU)** Cartesian coordinate system $(x, y, z)$ anchored at the initial UE location $(\phi_{\text{UE}}, \lambda_{\text{UE}}, h_{\text{UE}})$.
 
-#### 2. The Python Parameter: `u_mid`
-In the code script [gen_channel_v2_wGeometry_straightDoppler.py](file:///c:/Users/AT30890/Hoctap/1_Hprediction/working/H_predict_NTN/Gene_NTN_Data/Sionna/OpenNTN/channel_wGeometry/gen_channel_v2_wGeometry_straightDoppler.py#L89), the parameter that defines the position of the satellite at the snapshot time ($t=0$) is **`u_mid`**. By changing `u_mid`, you directly control the satellite's location and its direction of travel at $t=0$.
+### A. Rotation Matrix $\mathbf{R}_{\text{ECEF}\to\text{ENU}}$
+The rotation matrix from ECEF to the local ENU frame at initial latitude $\phi_{\text{UE}}$ and longitude $\lambda_{\text{UE}}$ is:
 
-#### 3. How to Set Heading Directions in the Python Code
-For a circular orbit tilted at inclination $i = 55.0^\circ$, here is how different values of `u_mid` map to ground heading directions, and how you should configure them:
+$$\mathbf{R}_{\text{ECEF}\to\text{ENU}} = \begin{bmatrix} 
+-\sin(\lambda_{\text{UE}}) & \cos(\lambda_{\text{UE}}) & 0 \\ 
+-\sin(\phi_{\text{UE}})\cos(\lambda_{\text{UE}}) & -\sin(\phi_{\text{UE}})\sin(\lambda_{\text{UE}}) & \cos(\phi_{\text{UE}}) \\ 
+\cos(\phi_{\text{UE}})\cos(\lambda_{\text{UE}}) & \cos(\phi_{\text{UE}})\sin(\lambda_{\text{UE}}) & \sin(\phi_{\text{UE}}) 
+\end{bmatrix}$$
 
-* **To set heading to North-Northeast (NNE) — Azimuth $\approx 35^\circ$ (Ascending Pass)**:
-  * **What to set in Python**:
-    ```python
-    u_mid = np.arcsin(np.sin(phi_UE) / np.sin(inclination))
-    ```
-  * **Meaning**: The satellite crosses the latitude of the UE while heading Northwards and Eastwards (climbing up the globe).
+### B. Position Transformation
+Given a 3D position vector in ECEF $\vec{r}_{\text{ECEF}}$, its local ENU position relative to the initial UE anchor $\vec{r}_{\text{UE, ECEF}}(0)$ is:
 
-* **To set heading to South-Southeast (SSE) — Azimuth $\approx 145^\circ$ (Descending Pass)**:
-  * **What to set in Python**:
-    ```python
-    u_mid = np.pi - np.arcsin(np.sin(phi_UE) / np.sin(inclination))
-    ```
-  * **Meaning**: The satellite crosses the latitude of the UE while heading Southwards and Eastwards (falling down the globe).
+$$\vec{p}_{\text{ENU}} = \mathbf{R}_{\text{ECEF}\to\text{ENU}} \cdot \left( \vec{r}_{\text{ECEF}} - \vec{r}_{\text{UE, ECEF}}(0) \right)$$
 
-* **To set heading to Exactly East (E) — Azimuth $= 90^\circ$ (Northernmost Peak)**:
-  * **What to set in Python**:
-    ```python
-    # Note: Requires the UE latitude phi_UE to equal the inclination (55 degrees N)
-    u_mid = np.pi / 2  # (90 degrees)
-    ```
-  * **Meaning**: The satellite is at the peak of its latitude curve. For a split second, it has stopped moving North and is heading directly East.
+### C. Velocity Vector Transformation
+Given a 3D velocity vector in ECEF $\vec{v}_{\text{ECEF}}$ (for either the satellite or the UE), its 3D velocity vector in the local ENU frame is:
 
-* **To set heading to Exactly East (E) — Azimuth $= 90^\circ$ (Southernmost Peak)**:
-  * **What to set in Python**:
-    ```python
-    # Note: Requires the UE latitude phi_UE to equal -inclination (55 degrees S)
-    u_mid = 3 * np.pi / 2  # (270 degrees)
-    ```
-  * **Meaning**: The satellite is at the bottom of its latitude curve, heading directly East.
-
-
-
+$$\vec{v}_{\text{ENU}} = \mathbf{R}_{\text{ECEF}\to\text{ENU}} \cdot \vec{v}_{\text{ECEF}}$$
 
 ---
 
-## 3. How to Configure the Satellite Trajectory in the Code
+## 4. How to Configure the Satellite Trajectory in the Code
 
 You can customize the orbit, alignment, and pass trajectory by modifying specific lines in `gen_channel_v2_wGeometry_straightDoppler.py`:
 
 ### A. Orbit Altitude & Speed
 * **To change the altitude**: Modify `satellite_height` around **Line 42** (in meters, e.g., `satellite_height = 600000.0` for 600 km).
-* Changing this parameter automatically updates the orbital radius (`r_orbit`), the orbital angular rate (`omega_s`), and the linear satellite velocity (`v_sat_orbit`) via the Keplerian equations at **Lines 60-62**.
+* Changing this parameter automatically updates the orbital radius (`r_orbit`), the orbital angular rate (`omega_s`), and the linear satellite velocity (`v_sat_orbit`) via Keplerian equations.
 
 ### B. Orbital Inclination (Tilted Plane)
 * **To change the tilt**: Modify `inclination_deg` around **Line 43** (in degrees, e.g., `inclination_deg = 55.0`).
@@ -153,5 +127,3 @@ By default, the RAAN (`Omega_RAAN`) is calculated so that the orbit plane passes
     ```python
     Omega_RAAN = (lambda_UE - np.arctan2(np.sin(u_mid) * np.cos(inclination), np.cos(u_mid))) + np.deg2rad(5.0)  # Offset by 5 degrees East
     ```
-  * Adjusting this offset dynamically changes the maximum elevation angle and the slant range calculated at **Lines 102–108**.
-
