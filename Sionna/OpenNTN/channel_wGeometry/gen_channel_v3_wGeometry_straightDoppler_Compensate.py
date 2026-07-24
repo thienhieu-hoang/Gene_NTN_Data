@@ -352,6 +352,50 @@ savemat(mat_filename, mat_data)
 print(f"Saved channel and geometry simulation data to {mat_filename}")
 
 # =========================================================================
+# 4.5. CHANNEL GRID PLOTTING (Real Part comparison, saved separately)
+# =========================================================================
+try:
+    # Extract the first channel (batch index 0)
+    H_full_plot = h_eff_siso_full[0]  # Shape: [14, 132]
+    H_comp_plot = h_eff_siso_comp[0]  # Shape: [14, 132]
+    
+    # Transpose so that OFDM Symbol Index is on the x-axis and Subcarrier Index is on the y-axis
+    real_full_t = np.real(H_full_plot).T  # Shape: [132, 14]
+    real_comp_t = np.real(H_comp_plot).T  # Shape: [132, 14]
+    
+    # 1. Full Doppler Real Part
+    fig0, ax0 = plt.subplots(figsize=(8, 5), facecolor='white')
+    im0 = ax0.imshow(real_full_t, aspect='auto', cmap='viridis', origin='lower')
+    ax0.set_title(f"Full Doppler (Original): Real Part of Channel ({scenario.upper()})\nElevation Angle: {elevation_angle:.2f}°")
+    ax0.set_xlabel("OFDM Symbol Index")
+    ax0.set_ylabel("Subcarrier Index")
+    fig0.colorbar(im0, ax=ax0)
+    plt.tight_layout()
+    channel_real_full_filename = os.path.join(output_dir, f"channel_real_full_{scenario}.pdf")
+    plt.savefig(channel_real_full_filename, format='pdf', bbox_inches='tight', pad_inches=0.01)
+    plt.close(fig0)
+    print(f"Saved Full Doppler real part channel plot to {channel_real_full_filename}")
+    
+    # 2. Precompensated Doppler Real Part
+    fig1, ax1 = plt.subplots(figsize=(8, 5), facecolor='white')
+    im1 = ax1.imshow(real_comp_t, aspect='auto', cmap='viridis', origin='lower')
+    ax1.set_title(f"Precompensated Doppler: Real Part of Channel ({scenario.upper()})\nElevation Angle: {elevation_angle:.2f}°")
+    ax1.set_xlabel("OFDM Symbol Index")
+    ax1.set_ylabel("Subcarrier Index")
+    fig1.colorbar(im1, ax=ax1)
+    plt.tight_layout()
+    channel_real_comp_filename = os.path.join(output_dir, f"channel_real_comp_{scenario}.pdf")
+    plt.savefig(channel_real_comp_filename, format='pdf', bbox_inches='tight', pad_inches=0.01)
+    plt.close(fig1)
+    print(f"Saved Precompensated Doppler real part channel plot to {channel_real_comp_filename}")
+
+except Exception as e:
+    print(f"Warning: Could not save channel real-part plots. Error: {e}")
+
+
+
+
+# =========================================================================
 # 5. GEOMETRY SNAPSHOT PLOTTING (ECEF Coordinate System)
 # =========================================================================
 try:

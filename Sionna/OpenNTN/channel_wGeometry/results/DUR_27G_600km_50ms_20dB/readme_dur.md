@@ -12,5 +12,5 @@
 - **SNR (for LS estimation)**: 20.0 dB
 - **Total OFDM Symbols**: 14
 - **Pilot Symbols (0-indexed)**: [2, 7, 11]
-- **Total Samples Generated**: 1 (1 Snapshot)
-- **Average RMS Delay Spread**: 1.92 ns
+- **Total Samples Generated**: 1
+- **Average RMS Delay Spread**: 2.84 ns
