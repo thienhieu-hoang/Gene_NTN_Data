@@ -117,3 +117,11 @@ Multiplying the channel path gains sample-wise by $e^{j 2 \pi f_{d,\text{sat}} t
 By applying the phase rotation directly to the `pathgains`, the toolbox:
 1. Implements the physical effect of a Doppler shift (carrier frequency translation) during propagation.
 2. Keeps the channel representation mathematically unified, allowing the `pathgains` output to reflect the true, combined physical channel state (fading + Doppler offset).
+
+## To generate the effective channel
+
+### 1. Use probe grid (one-all txGrid)
+- Results are good with low UE velocity (5 m/s, ...)
+- With highe UE velocity (20, 30 m/s)
+    - Still good if delay spread is 200 ns
+    - If delay spread is 300 ns, results are not good.
