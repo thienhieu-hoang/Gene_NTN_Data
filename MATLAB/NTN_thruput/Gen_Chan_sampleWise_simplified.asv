@@ -4,7 +4,7 @@ addpath('..\helper\')
 simParameters.CarrierFrequency = 27e9; % 2.18e9; %19e9; % 2.18e9;                  % Carrier frequency (in Hz)
 simParameters.SatelliteAltitude = 1000000;
 
-simParameters.ElevationAngle = 50; % 50                    % Elevation angle (in degrees)
+simParameters.ElevationAngle = 90; % 50                    % Elevation angle (in degrees)
 simParameters.MobileSpeed = 30 ; % m/s  % 5*1000/3600;               % Speed of mobile terminal (in m/s)
 simParameters.MobileAltitude = 0;
 
@@ -28,8 +28,8 @@ channel = nrTDLChannel;
 channel.DelayProfile = 'NTN-TDL-A';
 channel.DelaySpread = 200e-9;
 channel.SatelliteDopplerShift = satelliteDopplerShift;
-channel.MaximumDopplerShift = simParameters.MobileSpeed*simParameters.CarrierFrequency/c;
-% channel.MaximumDopplerShift = 0;
+% channel.MaximumDopplerShift = simParameters.MobileSpeed*simParameters.CarrierFrequency/c;
+channel.MaximumDopplerShift = 0;
 channel.NumTransmitAntennas = nTxAnts;
 channel.NumReceiveAntennas = nRxAnts;
 % channel.Seed = 5;

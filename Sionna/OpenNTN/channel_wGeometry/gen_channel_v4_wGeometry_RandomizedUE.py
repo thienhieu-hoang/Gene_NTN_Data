@@ -117,17 +117,31 @@ N_samples = 16
 batch_size = 8
 
 # Randomized UE range in ENU (East-North-Up)
-x_min, x_max = -1000.0, 1000.0   # meters in Easting
-y_min, y_max = -1000.0, 1000.0   # meters in Northing
 z_val = 1.5                      # Standard mobile antenna height (m)
-v_min, v_max = 10.0, 30.0        # ground speed in m/s
+v_min, v_max = 5.0, 5.0        # ground speed in m/s
+r_beam = 15000.0                 # 15 km beam footprint radius
+r_ue_max = 14500.0               # Maximum initial radius for UE generation (14.5 km)
+delay_spread_ns_custom = 300 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
 
 # ----------------- Generate Randomized UE Positions & Velocities -----------------
 np.random.seed(42)
 ut_loc_ENU_all = np.zeros((N_samples, 3))
-ut_loc_ENU_all[:, 0] = np.random.uniform(x_min, x_max, N_samples)
-ut_loc_ENU_all[:, 1] = np.random.uniform(y_min, y_max, N_samples)
+
+# Generate positions uniformly inside a circle of radius r_ue_max (polar coordinates)
+theta_rand = np.random.uniform(0.0, 2 * np.pi, N_samples)
+r_rand = r_ue_max * np.sqrt(np.random.uniform(0.0, 1.0, N_samples))
+ut_loc_ENU_all[:, 0] = r_rand * np.cos(theta_rand)
+ut_loc_ENU_all[:, 1] = r_rand * np.sin(theta_rand)
 ut_loc_ENU_all[:, 2] = z_val
+
+# Ensure the first data sample has an offset distance of at least 5000m (5km) compared to the beam center
+dist_first = np.sqrt(ut_loc_ENU_all[0, 0]**2 + ut_loc_ENU_all[0, 1]**2)
+while dist_first < 5000.0 or dist_first > r_ue_max:
+    theta_f = np.random.uniform(0.0, 2 * np.pi)
+    r_f = r_ue_max * np.sqrt(np.random.uniform(0.0, 1.0))
+    ut_loc_ENU_all[0, 0] = r_f * np.cos(theta_f)
+    ut_loc_ENU_all[0, 1] = r_f * np.sin(theta_f)
+    dist_first = np.sqrt(ut_loc_ENU_all[0, 0]**2 + ut_loc_ENU_all[0, 1]**2)
 
 ut_speed_all = np.random.uniform(v_min, v_max, N_samples)
 ut_heading_all = np.random.uniform(0.0, 2 * np.pi, N_samples)
@@ -230,6 +244,12 @@ rounded_elev = int(round(elevation_angle_nom / 10.0) * 10)
 rounded_elev = max(10, min(90, rounded_elev))
 channel_model._scenario._params_nlos[f"numClusters_{rounded_elev}"] = 3
 
+# Apply custom delay spread if configured
+if delay_spread_ns_custom is not None:
+    target_log_mean_ds = np.log10(delay_spread_ns_custom * 1e-9)
+    channel_model._scenario._params_los[f"muDS_{rounded_elev}"] = tf.constant(target_log_mean_ds, dtype=tf.float32)
+    channel_model._scenario._params_nlos[f"muDS_{rounded_elev}"] = tf.constant(target_log_mean_ds, dtype=tf.float32)
+
 ofdm_channel = GenerateOFDMChannel(channel_model, resource_grid=rg)
 remove_nulled = RemoveNulledSubcarriers(rg)
 num_time_steps = 14 * (rg.fft_size + rg.cyclic_prefix_length)
@@ -237,7 +257,10 @@ channel_seed = 42
 
 # Setup outputs directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
-setting_dir = f"{scenario.upper()}_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km_{int((x_max-x_min)/1000)}x{int((y_max-y_min)/1000)}km_{int(v_min)}to{int(v_max)}mps"
+if delay_spread_ns_custom is not None:
+    setting_dir = f"{scenario.upper()}{int(delay_spread_ns_custom)}ns_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
+else:
+    setting_dir = f"{scenario.upper()}_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
 output_dir = os.path.join(script_dir, "results", setting_dir, f"{int(SNR_dB)}dB")
 os.makedirs(output_dir, exist_ok=True)
 
@@ -251,6 +274,10 @@ H_LS_comp_list = []
 H_interp_full_list = []
 H_interp_comp_list = []
 delay_spreads_all = []
+nmse_ls_list = []
+nmse_ls_pilot_list = []
+nmse_prac_list = []
+nmse_li_list = []
 
 num_batches = int(np.ceil(N_samples / batch_size))
 print(f"Starting batched generation of {N_samples} channels (Batch Size: {batch_size}, Total Batches: {num_batches})...")
@@ -285,6 +312,9 @@ for b in range(num_batches):
     # 2. Update Channel Model Topology
     channel_model.set_topology(ut_loc_tensor, bs_loc_tensor, ut_orientations, bs_orientations,
                                ut_velocities_tensor, bs_velocities_tensor, in_state, los=True)
+    
+    # Set the beam center to the local ENU origin (shape [current_batch_size, 3])
+    channel_model._scenario.beam_center = tf.zeros([current_batch_size, 3], dtype=tf.float32)
     
     # Unique iteration seed for this batch, ensuring alignment of full and comp
     iteration_seed = channel_seed + b
@@ -360,6 +390,43 @@ for b in range(num_batches):
     h_interp_full_batch = np.stack(h_interp_full_batch, axis=0)
     h_interp_comp_batch = np.stack(h_interp_comp_batch, axis=0)
     
+    # Calculate batch NMSE values
+    nmse_ls_batch = []
+    nmse_ls_pilot_batch = []
+    nmse_prac_batch = []
+    nmse_li_batch = []
+    for idx_in_batch in range(current_batch_size):
+        h_eff_c = h_eff_siso_comp[idx_in_batch]
+        h_eff_f = h_eff_siso_full[idx_in_batch]
+        
+        # LS estimated full grid (un-interpolated)
+        h_ls_c = h_LS_comp[idx_in_batch]
+        
+        # NMSE LS full
+        n_ls = np.sum(np.abs(h_eff_c - h_ls_c)**2) / np.sum(np.abs(h_eff_c)**2)
+        nmse_ls_batch.append(n_ls)
+        
+        # NMSE LS pilots (only at pilot locations)
+        h_eff_pilots = h_eff_c[pilot_symbols, pilot_subcarriers]
+        h_ls_pilots = h_LS_pilots_comp[idx_in_batch]
+        n_ls_p = np.sum(np.abs(h_eff_pilots - h_ls_pilots)**2) / np.sum(np.abs(h_eff_pilots)**2)
+        nmse_ls_pilot_batch.append(n_ls_p)
+        
+        # NMSE prac (interpolated precompensated)
+        h_interp_c = h_interp_comp_batch[idx_in_batch]
+        n_prac = np.sum(np.abs(h_eff_c - h_interp_c)**2) / np.sum(np.abs(h_eff_c)**2)
+        nmse_prac_batch.append(n_prac)
+        
+        # NMSE li (interpolated uncompensated)
+        h_interp_f = h_interp_full_batch[idx_in_batch]
+        n_li = np.sum(np.abs(h_eff_f - h_interp_f)**2) / np.sum(np.abs(h_eff_f)**2)
+        nmse_li_batch.append(n_li)
+        
+    nmse_ls_list.extend(nmse_ls_batch)
+    nmse_ls_pilot_list.extend(nmse_ls_pilot_batch)
+    nmse_prac_list.extend(nmse_prac_batch)
+    nmse_li_list.extend(nmse_li_batch)
+    
     # Accumulate batch results
     H_eff_full_list.append(h_eff_siso_full)
     H_eff_comp_list.append(h_eff_siso_comp)
@@ -390,7 +457,6 @@ for b in range(num_batches):
             ue_path_ECEF = np.array(ue_path_ECEF).T
             
             # Generate Beam Footprint circle (15 km radius) in ENU and rotate to ECEF
-            r_beam = 15000.0  # 15 km beam radius
             theta_circle = np.linspace(0, 2 * np.pi, 100)
             circle_ENU = np.zeros((3, 100))
             circle_ENU[0] = r_beam * np.cos(theta_circle)
@@ -532,25 +598,54 @@ H_LS_comp = np.concatenate(H_LS_comp_list, axis=0)
 H_interp_full = np.concatenate(H_interp_full_list, axis=0)
 H_interp_comp = np.concatenate(H_interp_comp_list, axis=0)
 
+# Convert channel grids to MATLAB shape [14, 132, N_samples]
+H_perfect = np.transpose(H_eff_comp, (1, 2, 0))      # [14, 132, N_samples]
+H_perfect_ori = np.transpose(H_eff_full, (1, 2, 0))  # [14, 132, N_samples]
+H_prac = np.transpose(H_interp_comp, (1, 2, 0))      # [14, 132, N_samples]
+H_li = np.transpose(H_interp_full, (1, 2, 0))        # [14, 132, N_samples]
+H_ls_pilots = np.transpose(H_LS_comp, (1, 0))        # [numPilots, N_samples]
+
+# Pilot positions and indices (MATLAB style: 1-indexed, column-major)
+pilot_rows = pilot_subcarriers + 1
+pilot_cols = pilot_symbols + 1
+pilot_indices = (pilot_cols - 1) * 132 + pilot_rows
+
+# Convert NMSE lists to arrays
+nmse_prac = np.array(nmse_prac_list)
+nmse_ls = np.array(nmse_ls_list)
+nmse_ls_pilot = np.array(nmse_ls_pilot_list)
+nmse_li = np.array(nmse_li_list)
+
+# Calculate nominal common Doppler shift at the beam center (ENU [0,0,0])
+lambda_0 = SPEED_OF_LIGHT / carrier_frequency
+v_los_bc = -bs_loc_ENU
+u_los_bc = v_los_bc / np.linalg.norm(v_los_bc)
+doppler_sat_bc = np.dot(v_sat_ENU, u_los_bc) / lambda_0
+print(f"Calculated Doppler shift at beam center: {doppler_sat_bc:.2f} Hz")
+
 # Save .mat file
 mat_filename = os.path.join(output_dir, f"channel_{scenario}_randomizedUE.mat")
 mat_data = {
-    # Full Doppler channels
-    "H_eff_full": H_eff_full,
-    "H_LS_full": H_LS_full,
-    "H_interp_full": H_interp_full,
+    # Main requested MATLAB matrices
+    "H_perfect": H_perfect,
+    "H_perfect_ori": H_perfect_ori,
+    "H_prac": H_prac,
+    "H_li": H_li,
+    "H_ls_pilots": H_ls_pilots,
+    "pilot_indices": pilot_indices,
+    "pilot_rows": pilot_rows,
+    "pilot_cols": pilot_cols,
+    "nmse_prac": nmse_prac,
+    "nmse_ls": nmse_ls,
+    "nmse_ls_pilot": nmse_ls_pilot,
+    "nmse_li": nmse_li,
+    "doppler_sat_bc": doppler_sat_bc,
     
-    # Precompensated channels
-    "H_eff_comp": H_eff_comp,
-    "H_LS_comp": H_LS_comp,
-    "H_interp_comp": H_interp_comp,
-    
-    "pilot_symbols": pilot_symbols + 1,       # Convert to 1-indexed for MATLAB
-    "pilot_subcarriers": pilot_subcarriers + 1, # Convert to 1-indexed for MATLAB
-    "ut_loc_ENU": ut_loc_ENU_all,       # All randomized UEs position vectors [N_samples, 3] in ENU
-    "ut_velocity_ENU": ut_velocity_ENU_all, # All randomized UEs velocity vectors [N_samples, 3] in ENU
-    
-    # Nominal reference geometry
+    # Metadata and other parameters
+    "pilot_symbols": pilot_symbols + 1,       
+    "pilot_subcarriers": pilot_subcarriers + 1, 
+    "ut_loc_ENU": ut_loc_ENU_all,       
+    "ut_velocity_ENU": ut_velocity_ENU_all, 
     "bs_loc_ENU": bs_loc_ENU,
     "bs_velocity_ENU": v_sat_ENU,
     "sat_speed": float(sat_speed),
@@ -570,6 +665,8 @@ max_delay_spread_ns = np.max(delay_spreads_ns) if len(delay_spreads_ns) > 0 else
 
 md_filename = os.path.join(output_dir, f"readme_{scenario}_randomizedUE.md")
 
+ds_val_str = f"{delay_spread_ns_custom:.1f} ns (Custom Overridden)" if delay_spread_ns_custom is not None else "Standard 3GPP TR 38.811"
+
 md_content = f"""# Channel & Geometry Generation Settings - {scenario.upper()} (Randomized UE)
 
 - **Scenario Type**: {scenario.upper()} (dur = Dense Urban, sur = SubUrban, urb = Urban)
@@ -584,17 +681,27 @@ md_content = f"""# Channel & Geometry Generation Settings - {scenario.upper()} (
 - **Total OFDM Symbols**: 14
 - **Pilot Symbols (0-indexed)**: [2, 7, 11]
 - **Total Samples Generated**: {N_samples}
-- **Average RMS Delay Spread**: {avg_delay_spread_ns:.2f} ns (Range: [{min_delay_spread_ns:.2f}, {max_delay_spread_ns:.2f}] ns)
+- **Target Delay Spread Configuration**: {ds_val_str}
+- **Average RMS Delay Spread (Realized)**: {avg_delay_spread_ns:.2f} ns (Range: [{min_delay_spread_ns:.2f}, {max_delay_spread_ns:.2f}] ns)
+
+## Satellite (LEO) Settings (Fixed Snapshot)
+- **Temporal State**: Single snapshot at orbital closest approach ($t = 0$ seconds)
+- **Satellite Position (ENU)**: Fixed at [{bs_loc_ENU[0]:.2f}, {bs_loc_ENU[1]:.2f}, {bs_loc_ENU[2]:.2f}] meters
+- **Satellite Velocity Vector (ENU)**: Fixed at [{v_sat_ENU[0]:.2f}, {v_sat_ENU[1]:.2f}, {v_sat_ENU[2]:.2f}] m/s (Speed: {sat_speed:.2f} m/s)
+
+## Beam Boresight & Footprint Settings
+- **Beam Center (ECEF)**: [{r_ue_ECEF_0[0]:.2f}, {r_ue_ECEF_0[1]:.2f}, {r_ue_ECEF_0[2]:.2f}] meters
+- **Beam Center (ENU)**: [0.00, 0.00, 0.00] meters (Origin of local tangent plane)
+- **Beam Footprint Radius**: {r_beam / 1000:.1f} km
 
 ## UE Randomization Settings
 - **Generation Method**: Randomized UE Positions and Velocities (GPU Mini-Batched)
 - **Position Area (ENU)**: 
-  * East (X): [{x_min}, {x_max}] meters (Span: {int((x_max-x_min)/1000)}x{int((y_max-y_min)/1000)} km)
-  * North (Y): [{y_min}, {y_max}] meters
+  * Shape: Uniformly distributed inside a circle of radius {r_ue_max/1000:.2f} km around the beam center
   * Height (Z): {z_val} meters above ground
 - **Velocity (ENU)**:
   * Speed Range: [{v_min}, {v_max}] m/s
-  * Heading (Direction): Randomized uniformly over [0, 360] degrees (full direction randomization)
+  * Heading (Direction): Randomized uniformly over [0, 360] degrees (full direction randomization across all generated samples)
 """
 
 with open(md_filename, "w") as f:

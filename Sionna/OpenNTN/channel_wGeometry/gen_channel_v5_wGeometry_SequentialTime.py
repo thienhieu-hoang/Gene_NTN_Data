@@ -111,6 +111,7 @@ direction = "downlink"
 num_ut = 1
 SNR_dB = 20.0
 SNR_linear = 10.0 ** (SNR_dB / 10.0)
+r_beam = 15000.0                 # 15 km beam footprint radius
 
 # Total sequential slots (N_samples) to generate
 N_samples = 16
@@ -272,6 +273,10 @@ H_LS_comp_list = []
 H_interp_full_list = []
 H_interp_comp_list = []
 delay_spreads_all = []
+nmse_ls_list = []
+nmse_ls_pilot_list = []
+nmse_prac_list = []
+nmse_li_list = []
 
 num_batches = int(np.ceil(N_samples / batch_size))
 print(f"Starting batched sequential generation of {N_samples} slots (Batch Size: {batch_size}, Total Batches: {num_batches})...")
@@ -301,6 +306,9 @@ for b in range(num_batches):
     # 2. Update Channel Model Topology
     channel_model.set_topology(ut_loc_tensor, bs_loc_tensor, ut_orientations, bs_orientations,
                                ut_velocities_tensor, bs_velocities_tensor, in_state, los=True)
+    
+    # Set the beam center to the local ENU origin (shape [current_batch_size, 3])
+    channel_model._scenario.beam_center = tf.zeros([current_batch_size, 3], dtype=tf.float32)
     
     # Unique iteration seed for this batch, ensuring alignment of full and comp
     iteration_seed = channel_seed + b
@@ -376,6 +384,43 @@ for b in range(num_batches):
     h_interp_full_batch = np.stack(h_interp_full_batch, axis=0)
     h_interp_comp_batch = np.stack(h_interp_comp_batch, axis=0)
     
+    # Calculate batch NMSE values
+    nmse_ls_batch = []
+    nmse_ls_pilot_batch = []
+    nmse_prac_batch = []
+    nmse_li_batch = []
+    for idx_in_batch in range(current_batch_size):
+        h_eff_c = h_eff_siso_comp[idx_in_batch]
+        h_eff_f = h_eff_siso_full[idx_in_batch]
+        
+        # LS estimated full grid (un-interpolated)
+        h_ls_c = h_LS_comp[idx_in_batch]
+        
+        # NMSE LS full
+        n_ls = np.sum(np.abs(h_eff_c - h_ls_c)**2) / np.sum(np.abs(h_eff_c)**2)
+        nmse_ls_batch.append(n_ls)
+        
+        # NMSE LS pilots (only at pilot locations)
+        h_eff_pilots = h_eff_c[pilot_symbols, pilot_subcarriers]
+        h_ls_pilots = h_LS_pilots_comp[idx_in_batch]
+        n_ls_p = np.sum(np.abs(h_eff_pilots - h_ls_pilots)**2) / np.sum(np.abs(h_eff_pilots)**2)
+        nmse_ls_pilot_batch.append(n_ls_p)
+        
+        # NMSE prac (interpolated precompensated)
+        h_interp_c = h_interp_comp_batch[idx_in_batch]
+        n_prac = np.sum(np.abs(h_eff_c - h_interp_c)**2) / np.sum(np.abs(h_eff_c)**2)
+        nmse_prac_batch.append(n_prac)
+        
+        # NMSE li (interpolated uncompensated)
+        h_interp_f = h_interp_full_batch[idx_in_batch]
+        n_li = np.sum(np.abs(h_eff_f - h_interp_f)**2) / np.sum(np.abs(h_eff_f)**2)
+        nmse_li_batch.append(n_li)
+        
+    nmse_ls_list.extend(nmse_ls_batch)
+    nmse_ls_pilot_list.extend(nmse_ls_pilot_batch)
+    nmse_prac_list.extend(nmse_prac_batch)
+    nmse_li_list.extend(nmse_li_batch)
+    
     # Accumulate batch results
     H_eff_full_list.append(h_eff_siso_full)
     H_eff_comp_list.append(h_eff_siso_comp)
@@ -406,7 +451,6 @@ for b in range(num_batches):
             ue_path_ECEF = np.array(ue_path_ECEF).T
             
             # Generate Beam Footprint circle (15 km radius) in ENU and rotate to ECEF
-            r_beam = 15000.0  # 15 km beam radius
             theta_circle = np.linspace(0, 2 * np.pi, 100)
             circle_ENU = np.zeros((3, 100))
             circle_ENU[0] = r_beam * np.cos(theta_circle)
@@ -510,7 +554,6 @@ for b in range(num_batches):
             plt.close('all')
         except Exception as ex:
             print(f"Warning: Could not save ENU plot. Error: {ex}")
-            
         # Plot Channels (Transposed, viridis colormap, cropped)
         try:
             real_full_t = np.real(h_eff_siso_full[0]).T
@@ -548,30 +591,64 @@ H_LS_comp = np.concatenate(H_LS_comp_list, axis=0)
 H_interp_full = np.concatenate(H_interp_full_list, axis=0)
 H_interp_comp = np.concatenate(H_interp_comp_list, axis=0)
 
+# Convert channel grids to MATLAB shape [14, 132, N_samples]
+H_perfect = np.transpose(H_eff_comp, (1, 2, 0))      # [14, 132, N_samples]
+H_perfect_ori = np.transpose(H_eff_full, (1, 2, 0))  # [14, 132, N_samples]
+H_prac = np.transpose(H_interp_comp, (1, 2, 0))      # [14, 132, N_samples]
+H_li = np.transpose(H_interp_full, (1, 2, 0))        # [14, 132, N_samples]
+H_ls_pilots = np.transpose(H_LS_comp, (1, 0))        # [numPilots, N_samples]
+
+# Pilot positions and indices (MATLAB style: 1-indexed, column-major)
+pilot_rows = pilot_subcarriers + 1
+pilot_cols = pilot_symbols + 1
+pilot_indices = (pilot_cols - 1) * 132 + pilot_rows
+
+# Convert NMSE lists to arrays
+nmse_prac = np.array(nmse_prac_list)
+nmse_ls = np.array(nmse_ls_list)
+nmse_ls_pilot = np.array(nmse_ls_pilot_list)
+nmse_li = np.array(nmse_li_list)
+
+# Calculate common Doppler shifts at the beam center (ENU [0,0,0]) over time
+lambda_0 = SPEED_OF_LIGHT / carrier_frequency
+doppler_sat_bc_all = []
+for i in range(N_samples):
+    v_los_bc = -bs_loc_ENU_all[i]
+    u_los_bc = v_los_bc / np.linalg.norm(v_los_bc)
+    d_sat_bc = np.dot(v_sat_ENU_all[i], u_los_bc) / lambda_0
+    doppler_sat_bc_all.append(d_sat_bc)
+doppler_sat_bc_all = np.array(doppler_sat_bc_all)
+
 # Save .mat file
 mat_filename = os.path.join(output_dir, f"channel_{scenario}_sequentialTime.mat")
 mat_data = {
-    # Full Doppler channels
-    "H_eff_full": H_eff_full,
-    "H_LS_full": H_LS_full,
-    "H_interp_full": H_interp_full,
+    # Main requested MATLAB matrices
+    "H_perfect": H_perfect,
+    "H_perfect_ori": H_perfect_ori,
+    "H_prac": H_prac,
+    "H_li": H_li,
+    "H_ls_pilots": H_ls_pilots,
+    "pilot_indices": pilot_indices,
+    "pilot_rows": pilot_rows,
+    "pilot_cols": pilot_cols,
+    "nmse_prac": nmse_prac,
+    "nmse_ls": nmse_ls,
+    "nmse_ls_pilot": nmse_ls_pilot,
+    "nmse_li": nmse_li,
+    "doppler_sat_bc": doppler_sat_bc_all,
     
-    # Precompensated channels
-    "H_eff_comp": H_eff_comp,
-    "H_LS_comp": H_LS_comp,
-    "H_interp_comp": H_interp_comp,
-    
-    "pilot_symbols": pilot_symbols + 1,       # Convert to 1-indexed for MATLAB
-    "pilot_subcarriers": pilot_subcarriers + 1, # Convert to 1-indexed for MATLAB
-    "ut_loc_ENU": ut_loc_ENU_all,       # All sequential UE positions [N_samples, 3] in ENU
-    "bs_loc_ENU": bs_loc_ENU_all,       # All sequential SAT positions [N_samples, 3] in ENU
-    "ut_velocity_ENU": v_ue_ENU_all,    # All sequential UE velocities [N_samples, 3] in ENU (constant)
-    "bs_velocity_ENU": v_sat_ENU_all,   # All sequential SAT velocities [N_samples, 3] in ENU
-    "sat_speeds_all": sat_speeds_all,   # SAT speed vector [N_samples]
-    "elevation_angles_all": elevation_angles_all, # Elevation angle over time [N_samples]
-    "slant_ranges_all": slant_ranges_all, # Slant range over time [N_samples]
-    "time_stamps": t_all,               # Time for each slot in seconds
-    "slot_duration": slot_duration      # Duration of each slot (s)
+    # Metadata and other parameters
+    "pilot_symbols": pilot_symbols + 1,       
+    "pilot_subcarriers": pilot_subcarriers + 1, 
+    "ut_loc_ENU": ut_loc_ENU_all,       
+    "bs_loc_ENU": bs_loc_ENU_all,       
+    "ut_velocity_ENU": v_ue_ENU_all,    
+    "bs_velocity_ENU": v_sat_ENU_all,   
+    "sat_speeds_all": sat_speeds_all,   
+    "elevation_angles_all": elevation_angles_all, 
+    "slant_ranges_all": slant_ranges_all, 
+    "time_stamps": t_all,               
+    "slot_duration": slot_duration      
 }
 savemat(mat_filename, mat_data)
 print(f"Successfully saved batched sequential channel data of {N_samples} slots to {mat_filename}")
@@ -599,6 +676,11 @@ md_content = f"""# Channel & Geometry Generation Settings - {scenario.upper()} (
 - **Pilot Symbols (0-indexed)**: [2, 7, 11]
 - **Total Samples Generated**: {N_samples} (Slots)
 - **Average RMS Delay Spread**: {avg_delay_spread_ns:.2f} ns (Range: [{min_delay_spread_ns:.2f}, {max_delay_spread_ns:.2f}] ns)
+
+## Beam Boresight & Footprint Settings
+- **Beam Center (ECEF)**: [{r_ue_ECEF_0[0]:.2f}, {r_ue_ECEF_0[1]:.2f}, {r_ue_ECEF_0[2]:.2f}] meters
+- **Beam Center (ENU)**: [0.00, 0.00, 0.00] meters (Origin of local tangent plane)
+- **Beam Footprint Radius**: {r_beam / 1000:.1f} km
 
 ## Time-Series Sequential Settings
 - **Generation Method**: Sequential Time-Series Generation (GPU Mini-Batched)

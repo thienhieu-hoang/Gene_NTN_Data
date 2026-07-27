@@ -120,8 +120,20 @@ By applying the phase rotation directly to the `pathgains`, the toolbox:
 
 ## To generate the effective channel
 
-### 1. Use probe grid (one-all txGrid)
+### 1. Approach 1: Use probe grid (one-all txGrid)
+(- convert an all-one txGrid into txWaveform
+ - sample-wise Doppler pre-compensate the txWaveform
+ - transmit through the channel 
+ - not adding noise to the rxWaveform
+ - convert rxWaveform back to rxGrid
+ - rxGrid is the effective channel
+)
 - Results are good with low UE velocity (5 m/s, ...)
 - With highe UE velocity (20, 30 m/s)
     - Still good if delay spread is 200 ns
     - If delay spread is 300 ns, results are not good.
+
+### 2. Set channel.SatelliteDopplerShift=0
+- Need to set random seed at 1 data sample generation (so the original perfect channel corresponds to the effective channel)
+
+--> Both 2 approaches consider the complete compensation effect between the SAT and UE (the positions of UE is the Beam center, there is no residual Doppler between SAT and UE) 

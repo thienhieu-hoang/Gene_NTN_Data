@@ -219,6 +219,9 @@ rounded_elev = int(round(elevation_angle / 10.0) * 10)
 rounded_elev = max(10, min(90, rounded_elev))
 channel_model._scenario._params_nlos[f"numClusters_{rounded_elev}"] = 3
 
+# Set the beam center to the local ENU origin (shape [batch_size, 3] which is [1, 3])
+channel_model._scenario.beam_center = tf.zeros([1, 3], dtype=tf.float32)
+
 # Pack local ENU coordinates into tensors
 ut_loc_tensor = tf.constant([[ut_loc_ENU]], dtype=tf.float32)         # Shape [1, 1, 3]
 bs_loc_tensor = tf.constant([[bs_loc_ENU]], dtype=tf.float32)         # Shape [1, 1, 3]
@@ -319,6 +322,39 @@ for b in range(batch_size):
     h_interp_comp_batch.append(h_interp_b)
 h_interp_comp_batch = np.stack(h_interp_comp_batch, axis=0) # [1, 14, 132]
 
+# Calculate nominal common Doppler shift at the beam center (ENU [0,0,0])
+lambda_0 = SPEED_OF_LIGHT / carrier_frequency
+v_los_bc = -bs_loc_ENU
+u_los_bc = v_los_bc / np.linalg.norm(v_los_bc)
+doppler_sat_bc = np.dot(v_sat_ENU, u_los_bc) / lambda_0
+print(f"Calculated Doppler shift at beam center: {doppler_sat_bc:.2f} Hz")
+
+# Calculate NMSE metrics
+h_eff_c = h_eff_siso_comp[0]
+h_eff_f = h_eff_siso_full[0]
+h_ls_c = h_LS_comp[0]
+h_ls_pilots = h_LS_pilots_comp[0]
+h_eff_pilots = h_eff_c[pilot_symbols, pilot_subcarriers]
+h_interp_c = h_interp_comp_batch[0]
+h_interp_f = h_interp_full_batch[0]
+
+nmse_ls = np.array([np.sum(np.abs(h_eff_c - h_ls_c)**2) / np.sum(np.abs(h_eff_c)**2)])
+nmse_ls_pilot = np.array([np.sum(np.abs(h_eff_pilots - h_ls_pilots)**2) / np.sum(np.abs(h_eff_pilots)**2)])
+nmse_prac = np.array([np.sum(np.abs(h_eff_c - h_interp_c)**2) / np.sum(np.abs(h_eff_c)**2)])
+nmse_li = np.array([np.sum(np.abs(h_eff_f - h_interp_f)**2) / np.sum(np.abs(h_eff_f)**2)])
+
+# Convert channel grids to MATLAB shape [14, 132, N_samples]
+H_perfect = np.transpose(h_eff_siso_comp, (1, 2, 0))      # [14, 132, 1]
+H_perfect_ori = np.transpose(h_eff_siso_full, (1, 2, 0))  # [14, 132, 1]
+H_prac = np.transpose(h_interp_comp_batch, (1, 2, 0))      # [14, 132, 1]
+H_li = np.transpose(h_interp_full_batch, (1, 2, 0))        # [14, 132, 1]
+H_ls_pilots = np.transpose(h_LS_pilots_comp, (1, 0))        # [numPilots, 1]
+
+# Pilot positions and indices (MATLAB style: 1-indexed, column-major)
+pilot_rows = pilot_subcarriers + 1
+pilot_cols = pilot_symbols + 1
+pilot_indices = (pilot_cols - 1) * 132 + pilot_rows
+
 # Set up dynamically named results directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
 dir_name = f"{scenario.upper()}_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km_{int(ue_speed)}mps_{int(SNR_dB)}dB"
@@ -328,25 +364,31 @@ os.makedirs(output_dir, exist_ok=True)
 # Save .mat file containing channel estimates, coordinates, and velocities
 mat_filename = os.path.join(output_dir, f"channel_{scenario}.mat")
 mat_data = {
-    # Full Doppler channels
-    "H_eff_full": h_eff_siso_full,
-    "H_LS_full": h_LS_pilots_full,
-    "H_interp_full": h_interp_full_batch,
+    # Main requested MATLAB matrices
+    "H_perfect": H_perfect,
+    "H_perfect_ori": H_perfect_ori,
+    "H_prac": H_prac,
+    "H_li": H_li,
+    "H_ls_pilots": H_ls_pilots,
+    "pilot_indices": pilot_indices,
+    "pilot_rows": pilot_rows,
+    "pilot_cols": pilot_cols,
+    "nmse_prac": nmse_prac,
+    "nmse_ls": nmse_ls,
+    "nmse_ls_pilot": nmse_ls_pilot,
+    "nmse_li": nmse_li,
+    "doppler_sat_bc": doppler_sat_bc,
     
-    # Precompensated channels
-    "H_eff_comp": h_eff_siso_comp,
-    "H_LS_comp": h_LS_pilots_comp,
-    "H_interp_comp": h_interp_comp_batch,
-    
-    "pilot_symbols": pilot_symbols + 1,       # Convert to 1-indexed for MATLAB
-    "pilot_subcarriers": pilot_subcarriers + 1, # Convert to 1-indexed for MATLAB
-    "ut_loc_ENU": ut_loc_ENU,           # UE local ENU position [x, y, z] in meters
-    "bs_loc_ENU": bs_loc_ENU,           # SAT local ENU position [x, y, z] in meters
-    "ut_velocity_ENU": v_UE_ENU,        # UE velocity vector [vx, vy, vz] in m/s
-    "bs_velocity_ENU": v_sat_ENU,       # SAT velocity vector [vx, vy, vz] in m/s
-    "sat_speed": float(sat_speed),      # SAT scalar speed in m/s
-    "elevation_angle": elevation_angle, # Calculated physical elevation angle (deg)
-    "slant_range": slant_range          # Calculated slant range (m)
+    # Metadata and other parameters
+    "pilot_symbols": pilot_symbols + 1,       
+    "pilot_subcarriers": pilot_subcarriers + 1, 
+    "ut_loc_ENU": ut_loc_ENU,           
+    "bs_loc_ENU": bs_loc_ENU,           
+    "ut_velocity_ENU": v_UE_ENU,        
+    "bs_velocity_ENU": v_sat_ENU,       
+    "sat_speed": float(sat_speed),      
+    "elevation_angle": elevation_angle, 
+    "slant_range": slant_range          
 }
 savemat(mat_filename, mat_data)
 print(f"Saved channel and geometry simulation data to {mat_filename}")
