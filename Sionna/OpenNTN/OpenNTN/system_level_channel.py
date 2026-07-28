@@ -513,8 +513,10 @@ class SystemLevelChannel_modify(SystemLevelChannel):
             d_vector = tf.expand_dims(bc_loc, 1) - bs_loc
             d_norm = tf.norm(d_vector, axis=-1, keepdims=True)
             r_hat_bc_base = d_vector / d_norm
-            r_hat_bc = tf.expand_dims(r_hat_bc_base, 1)
-            r_hat_bc = tf.expand_dims(tf.expand_dims(r_hat_bc, -1), -1)
+            # Correctly expand to [batch_size, num_bs, num_ut, 1, 1, 3, 1]
+            r_hat_bc = tf.expand_dims(r_hat_bc_base, 2)  # [batch_size, num_bs, num_ut, 3]
+            r_hat_bc = tf.expand_dims(tf.expand_dims(r_hat_bc, 3), 4)  # [batch_size, num_bs, num_ut, 1, 1, 3]
+            r_hat_bc = tf.expand_dims(r_hat_bc, -1)      # [batch_size, num_bs, num_ut, 1, 1, 3, 1]
 
         topology = Topology_modify(
                                 velocities=self._scenario.ut_velocities,

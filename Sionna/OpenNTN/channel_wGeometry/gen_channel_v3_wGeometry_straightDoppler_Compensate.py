@@ -33,6 +33,8 @@ from OpenNTN.utils import compute_stallite_doppler as compute_stallite_doppler
 from sionna.phy.channel import GenerateOFDMChannel
 from sionna.phy.ofdm import RemoveNulledSubcarriers
 
+SPEED_OF_LIGHT = 299792458.0
+
 # =========================================================================
 # 1. GEOMETRY CONFIGURATION PARAMETERS (from visualize_geometry.py)
 # =========================================================================
@@ -186,6 +188,29 @@ def interpolate_channel(rx_grid_b, tx_grid_b, pilot_mask):
         
     return h_interp
 
+def compute_complex_ssim(h_true, h_est):
+    def ssim_real_2d(x, y):
+        mu_x = np.mean(x)
+        mu_y = np.mean(y)
+        var_x = np.var(x)
+        var_y = np.var(y)
+        cov_xy = np.mean((x - mu_x) * (y - mu_y))
+        
+        val_max = max(np.max(x), np.max(y))
+        val_min = min(np.min(x), np.min(y))
+        L = val_max - val_min if val_max != val_min else 1.0
+        
+        C1 = (0.01 * L) ** 2
+        C2 = (0.03 * L) ** 2
+        
+        num = (2 * mu_x * mu_y + C1) * (2 * cov_xy + C2)
+        den = (mu_x**2 + mu_y**2 + C1) * (var_x + var_y + C2)
+        return num / den
+
+    ssim_r = ssim_real_2d(np.real(h_true), np.real(h_est))
+    ssim_i = ssim_real_2d(np.imag(h_true), np.imag(h_est))
+    return (ssim_r + ssim_i) / 2.0
+
 # Initialize accumulators
 H_eff_all = []
 H_LS_est_all = []
@@ -220,7 +245,7 @@ rounded_elev = max(10, min(90, rounded_elev))
 channel_model._scenario._params_nlos[f"numClusters_{rounded_elev}"] = 3
 
 # Set the beam center to the local ENU origin (shape [batch_size, 3] which is [1, 3])
-channel_model._scenario.beam_center = tf.zeros([1, 3], dtype=tf.float32)
+channel_model._scenario.set_beam_center(tf.zeros([1, 3], dtype=tf.float32))
 
 # Pack local ENU coordinates into tensors
 ut_loc_tensor = tf.constant([[ut_loc_ENU]], dtype=tf.float32)         # Shape [1, 1, 3]
@@ -343,6 +368,11 @@ nmse_ls_pilot = np.array([np.sum(np.abs(h_eff_pilots - h_ls_pilots)**2) / np.sum
 nmse_prac = np.array([np.sum(np.abs(h_eff_c - h_interp_c)**2) / np.sum(np.abs(h_eff_c)**2)])
 nmse_li = np.array([np.sum(np.abs(h_eff_f - h_interp_f)**2) / np.sum(np.abs(h_eff_f)**2)])
 
+# Calculate SSIM metrics (all compared to the precompensated effective channel h_eff_c)
+ssim_ls = float(compute_complex_ssim(h_eff_c, h_ls_c))
+ssim_prac = float(compute_complex_ssim(h_eff_c, h_interp_c))
+ssim_li = float(compute_complex_ssim(h_eff_c, h_interp_f))
+
 # Convert channel grids to MATLAB shape [14, 132, N_samples]
 H_perfect = np.transpose(h_eff_siso_comp, (1, 2, 0))      # [14, 132, 1]
 H_perfect_ori = np.transpose(h_eff_siso_full, (1, 2, 0))  # [14, 132, 1]
@@ -377,6 +407,9 @@ mat_data = {
     "nmse_ls": nmse_ls,
     "nmse_ls_pilot": nmse_ls_pilot,
     "nmse_li": nmse_li,
+    "ssim_prac": ssim_prac,
+    "ssim_ls": ssim_ls,
+    "ssim_li": ssim_li,
     "doppler_sat_bc": doppler_sat_bc,
     
     # Metadata and other parameters

@@ -33,6 +33,8 @@ from OpenNTN.utils import compute_stallite_doppler as compute_stallite_doppler
 from sionna.phy.channel import GenerateOFDMChannel
 from sionna.phy.ofdm import RemoveNulledSubcarriers
 
+SPEED_OF_LIGHT = 299792458.0
+
 # =========================================================================
 # 1. GEOMETRY CONFIGURATION PARAMETERS (from visualize_geometry.py)
 # =========================================================================
@@ -233,6 +235,29 @@ def interpolate_channel(rx_grid_b, tx_grid_b, pilot_mask):
         
     return h_interp
 
+def compute_complex_ssim(h_true, h_est):
+    def ssim_real_2d(x, y):
+        mu_x = np.mean(x)
+        mu_y = np.mean(y)
+        var_x = np.var(x)
+        var_y = np.var(y)
+        cov_xy = np.mean((x - mu_x) * (y - mu_y))
+        
+        val_max = max(np.max(x), np.max(y))
+        val_min = min(np.min(x), np.min(y))
+        L = val_max - val_min if val_max != val_min else 1.0
+        
+        C1 = (0.01 * L) ** 2
+        C2 = (0.03 * L) ** 2
+        
+        num = (2 * mu_x * mu_y + C1) * (2 * cov_xy + C2)
+        den = (mu_x**2 + mu_y**2 + C1) * (var_x + var_y + C2)
+        return num / den
+
+    ssim_r = ssim_real_2d(np.real(h_true), np.real(h_est))
+    ssim_i = ssim_real_2d(np.imag(h_true), np.imag(h_est))
+    return (ssim_r + ssim_i) / 2.0
+
 # Initialize openNTN Channel Model
 scenario_classes = {
     "dur": DenseUrban_modify,
@@ -277,6 +302,9 @@ nmse_ls_list = []
 nmse_ls_pilot_list = []
 nmse_prac_list = []
 nmse_li_list = []
+ssim_ls_list = []
+ssim_prac_list = []
+ssim_li_list = []
 
 num_batches = int(np.ceil(N_samples / batch_size))
 print(f"Starting batched sequential generation of {N_samples} slots (Batch Size: {batch_size}, Total Batches: {num_batches})...")
@@ -308,7 +336,7 @@ for b in range(num_batches):
                                ut_velocities_tensor, bs_velocities_tensor, in_state, los=True)
     
     # Set the beam center to the local ENU origin (shape [current_batch_size, 3])
-    channel_model._scenario.beam_center = tf.zeros([current_batch_size, 3], dtype=tf.float32)
+    channel_model._scenario.set_beam_center(tf.zeros([current_batch_size, 3], dtype=tf.float32))
     
     # Unique iteration seed for this batch, ensuring alignment of full and comp
     iteration_seed = channel_seed + b
@@ -384,11 +412,14 @@ for b in range(num_batches):
     h_interp_full_batch = np.stack(h_interp_full_batch, axis=0)
     h_interp_comp_batch = np.stack(h_interp_comp_batch, axis=0)
     
-    # Calculate batch NMSE values
+    # Calculate batch NMSE and SSIM values
     nmse_ls_batch = []
     nmse_ls_pilot_batch = []
     nmse_prac_batch = []
     nmse_li_batch = []
+    ssim_ls_batch = []
+    ssim_prac_batch = []
+    ssim_li_batch = []
     for idx_in_batch in range(current_batch_size):
         h_eff_c = h_eff_siso_comp[idx_in_batch]
         h_eff_f = h_eff_siso_full[idx_in_batch]
@@ -416,10 +447,22 @@ for b in range(num_batches):
         n_li = np.sum(np.abs(h_eff_f - h_interp_f)**2) / np.sum(np.abs(h_eff_f)**2)
         nmse_li_batch.append(n_li)
         
+        # Calculate batch SSIM values
+        s_ls = compute_complex_ssim(h_eff_c, h_ls_c)
+        s_prac = compute_complex_ssim(h_eff_c, h_interp_c)
+        s_li = compute_complex_ssim(h_eff_c, h_interp_f)
+        
+        ssim_ls_batch.append(s_ls)
+        ssim_prac_batch.append(s_prac)
+        ssim_li_batch.append(s_li)
+        
     nmse_ls_list.extend(nmse_ls_batch)
     nmse_ls_pilot_list.extend(nmse_ls_pilot_batch)
     nmse_prac_list.extend(nmse_prac_batch)
     nmse_li_list.extend(nmse_li_batch)
+    ssim_ls_list.extend(ssim_ls_batch)
+    ssim_prac_list.extend(ssim_prac_batch)
+    ssim_li_list.extend(ssim_li_batch)
     
     # Accumulate batch results
     H_eff_full_list.append(h_eff_siso_full)
@@ -603,11 +646,14 @@ pilot_rows = pilot_subcarriers + 1
 pilot_cols = pilot_symbols + 1
 pilot_indices = (pilot_cols - 1) * 132 + pilot_rows
 
-# Convert NMSE lists to arrays
+# Convert NMSE lists to arrays, and average SSIM lists to scalars
 nmse_prac = np.array(nmse_prac_list)
 nmse_ls = np.array(nmse_ls_list)
 nmse_ls_pilot = np.array(nmse_ls_pilot_list)
 nmse_li = np.array(nmse_li_list)
+ssim_prac = float(np.mean(ssim_prac_list)) if len(ssim_prac_list) > 0 else 0.0
+ssim_ls = float(np.mean(ssim_ls_list)) if len(ssim_ls_list) > 0 else 0.0
+ssim_li = float(np.mean(ssim_li_list)) if len(ssim_li_list) > 0 else 0.0
 
 # Calculate common Doppler shifts at the beam center (ENU [0,0,0]) over time
 lambda_0 = SPEED_OF_LIGHT / carrier_frequency
@@ -635,6 +681,9 @@ mat_data = {
     "nmse_ls": nmse_ls,
     "nmse_ls_pilot": nmse_ls_pilot,
     "nmse_li": nmse_li,
+    "ssim_prac": ssim_prac,
+    "ssim_ls": ssim_ls,
+    "ssim_li": ssim_li,
     "doppler_sat_bc": doppler_sat_bc_all,
     
     # Metadata and other parameters
