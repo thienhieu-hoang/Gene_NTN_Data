@@ -1,6 +1,6 @@
-# Channel & Geometry Generation Settings - DUR (Randomized UE)
+# Channel & Geometry Generation Settings - NTN-TDL-D (Randomized UE)
 
-- **Scenario Type**: DUR (dur = Dense Urban, sur = SubUrban, urb = Urban)
+- **TDL Model Profile**: NTN-TDL-D (3GPP TR 38.811 NTN Profile)
 - **Carrier Frequency**: 27.00 GHz
 - **Link Direction**: downlink
 - **Satellite (LEO) Height**: 600 km
@@ -11,9 +11,9 @@
 - **SNR (for LS estimation)**: 15 dB
 - **Total OFDM Symbols**: 14
 - **Pilot Symbols (0-indexed)**: [2, 7, 11]
-- **Total Samples Generated**: 512
-- **Target Delay Spread Configuration**: 200.0 ns (Custom Overridden)
-- **Average RMS Delay Spread (Realized)**: 199.03 ns (Range: [143.45, 246.98] ns)
+- **Total Samples Generated**: 16
+- **Target Delay Spread Configuration**: 50.0 ns (Custom Overridden)
+- **Average RMS Delay Spread (Realized)**: 45.47 ns (Range: [31.39, 53.22] ns)
 
 ## Satellite (LEO) Settings (Fixed Snapshot)
 - **Temporal State**: Single snapshot at orbital closest approach ($t = 0$ seconds)

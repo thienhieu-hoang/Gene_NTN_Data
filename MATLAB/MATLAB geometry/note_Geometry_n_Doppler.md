@@ -334,22 +334,6 @@ $$\mathbf{X}_t = \begin{bmatrix} \mathbf{p}_{\text{static}} \\ z_t \end{bmatrix}
    *   $\text{scenario\_type}$: The simulation environment (e.g., Suburban, Urban, Dense Urban) or TDL profile layout (e.g., NTN-TDL-A, TDL-C)
    *   $\text{NF}$: Receiver noise figure (dB)
 
-txWaveform -> H_perfet -> rxWafveform 
-
-Compensate TxWaveform -> H_pf -> compensat_ rxWaveform
-txWf -> effective H -> compensate rxWaveform
-
-Y = X.* H_effective + N
-
-H^_LS = Y./X
-
-conventional: interpolate H^LS
-
-H
-
-evaluate **: SSM I**
-
-- show errors of H_LS, conventional, Machine learning
 
 1. **Dynamic State Tuple ($z_t$)**: - change to another name
    These are the time-varying, state-dependent variables that change sample-by-sample or slot-by-slot, represented as the ordered tuple $z_t = \left( \mathbf{h}_{\text{profile},t}, \text{SNR}_t, B_t, \alpha_t, f_{d,t} \right)$:

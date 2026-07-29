@@ -249,6 +249,7 @@ class TDL(ChannelModel):
                     tx_corr_mat=None,
                     basestation_height=600000,
                     elevation_angle=80.0,
+                    doppler_mode='full',
                     precision=None):
         super().__init__(precision=precision)
 
@@ -259,7 +260,8 @@ class TDL(ChannelModel):
         #self._real_dtype = real_dtype
 
         # Set the file from which to load the model
-        assert model in ('A', 'B', 'C', 'D', 'E', 'A30', 'B100', 'C300'),\
+        assert model in ('A', 'B', 'C', 'D', 'E', 'A30', 'B100', 'C300',
+                         'NTN-TDL-A', 'NTN-TDL-B', 'NTN-TDL-C', 'NTN-TDL-D'),\
             "Invalid TDL model"
         if model == 'A':
             parameters_fname = "TDL-A.json"
@@ -284,9 +286,18 @@ class TDL(ChannelModel):
             if delay_spread != 300e-9:
                 print("Warning: Delay spread is set to 300ns with this model")
                 delay_spread = 300e-9
+        elif model == 'NTN-TDL-A':
+            parameters_fname = "NTN-TDL-A.json"
+        elif model == 'NTN-TDL-B':
+            parameters_fname = "NTN-TDL-B.json"
+        elif model == 'NTN-TDL-C':
+            parameters_fname = "NTN-TDL-C.json"
+        elif model == 'NTN-TDL-D':
+            parameters_fname = "NTN-TDL-D.json"
 
         assert basestation_height >= 160000.0, "Height of the basestation must be at least 160000m (LEO)"
         self._basestation_height = basestation_height
+        self._doppler_mode = doppler_mode
 
         assert 0.0 <= elevation_angle <= 90.0, "elevation angle must be between 0 and 90 degrees"
         self._elevation_angle = elevation_angle
@@ -413,6 +424,9 @@ class TDL(ChannelModel):
             print("Warning: The delay spread cannot be set with this model")
 
     def __call__(self, batch_size, num_time_steps, sampling_frequency):
+
+        if batch_size is None:
+            batch_size = 1
 
         # Time steps
         sample_times = tf.range(num_time_steps, dtype=self.rdtype)\
@@ -568,20 +582,23 @@ class TDL(ChannelModel):
         doppler_shift : float
             Doppler shift [Hz]
         """
-        #Experimental addition according to 811 6.9.2
-        G = 6.6743 * (10 ** (-11)) #Gravitational constant of Earth in m^3/(kg*s^2)
-        M = 5.972 * (10 ** 24) #Mass of Earth in kg
-        
-        v_light = 299792458 * 3.6# speed of light in m/s (as m/s * 3.6 to get km/h)
-        r_earth = 6371#Earths radius in km
-        h_sat = self.basestation_height/1000 #in km
-        elavation_angle = self.elevation_angle
+        # 3GPP TR 38.811 Section 6.9.2 Satellite Doppler calculation
+        G = 6.6743e-11           # Gravitational constant in m^3/(kg*s^2)
+        M = 5.972e24             # Mass of Earth in kg
+        r_earth = 6371000.0      # Earth radius in m
+        h_sat = float(self._basestation_height) # in m
+        elevation_angle = float(self._elevation_angle)
 
-        #Equation (8.41) from Curtis, H. D. (2005). Orbital Mechanics for Engineering Students. Butterworth-Heinemann. ISBN: 0 7506 6169 0.
-        v_sat = tf.math.sqrt((G*M)/((r_earth*1000)+(h_sat*1000)))/1000#speed of the satellite in given Orbit around Earth in km/s
+        v_sat = tf.math.sqrt((G * M) / (r_earth + h_sat)) # satellite speed in m/s
 
-        additional_doppler_shift_811 = v_sat/v_light * ((r_earth/(r_earth+h_sat)) * np.cos(np.deg2rad(elavation_angle))) * self._carrier_frequency
-        return 2.*PI*speed/SPEED_OF_LIGHT*self._carrier_frequency + additional_doppler_shift_811
+        if hasattr(self, '_doppler_mode') and self._doppler_mode == 'precompensated':
+            additional_doppler_shift_811 = 0.0
+        else:
+            # Satellite Doppler shift (Hz) according to TR 38.811 (6.9.2)
+            doppler_sat_hz = (v_sat / SPEED_OF_LIGHT) * (r_earth / (r_earth + h_sat)) * np.cos(np.deg2rad(elevation_angle)) * self._carrier_frequency
+            additional_doppler_shift_811 = 2.0 * PI * doppler_sat_hz
+
+        return 2.0 * PI * speed / SPEED_OF_LIGHT * self._carrier_frequency + additional_doppler_shift_811
 
 
     def _load_parameters(self, fname):
