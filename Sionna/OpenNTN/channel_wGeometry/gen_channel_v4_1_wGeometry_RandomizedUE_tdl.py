@@ -41,7 +41,7 @@ SPEED_OF_LIGHT = 299792458.0
 phi_UE_deg = 37.7749         # UE Reference Latitude (degrees)
 lambda_UE_deg = -122.4194    # UE Reference Longitude (degrees)
 h_UE = 100.0                 # UE Reference Altitude (m)
-satellite_height = 600000.0  # LEO Orbit altitude (m) (600 km)
+satellite_height = 1000000.0  # LEO Orbit altitude (m) (600 km)
 inclination_deg = 55.0       # Orbit inclination (degrees)
 ue_speed_nom = 50.0          # Nominal UE speed for references (m/s)
 
@@ -84,8 +84,19 @@ else:
     u_mid = np.sign(phi_UE) * np.pi / 2.0
 Omega_RAAN = lambda_UE - np.arctan2(np.sin(u_mid) * np.cos(inclination), np.cos(u_mid))
 
-# Calculate Satellite state at snapshot t = 0
-t = 0.0
+# Target Elevation Angle Configuration (e.g. 20, 30, 40, 50, 60, 70, 80, 90 deg, or None for peak 90 deg)
+target_elevation_angle = 50.0   # Desired nominal elevation angle in degrees (e.g. 50.0)
+
+# Calculate Satellite state at snapshot time t (aligned to target_elevation_angle)
+if target_elevation_angle is not None and target_elevation_angle < 89.9:
+    theta_target_rad = np.deg2rad(target_elevation_angle)
+    # Solve orbital central angle gamma for target elevation
+    gamma_central = np.pi / 2.0 - theta_target_rad - np.arcsin((a_wgs84 / r_orbit) * np.cos(theta_target_rad))
+    t_snapshot = float(gamma_central / omega_s)
+else:
+    t_snapshot = 0.0
+
+t = t_snapshot
 r_sat_ECEF, v_sat_ECEF = get_satellite_state_ecef(
     t, omega_s, u_mid, Omega_RAAN, inclination, r_orbit, v_sat_orbit, omega_E
 )
@@ -103,10 +114,13 @@ bs_loc_ENU = ecef_to_enu(r_sat_ECEF, r_ue_ECEF_0, lambda_UE, phi_UE)
 v_sat_ENU = ecef_to_enu(v_sat_ECEF, np.zeros(3), lambda_UE, phi_UE)
 sat_speed = np.linalg.norm(v_sat_ECEF)
 
+# Target Elevation Angle Configuration (e.g. 20, 30, 40, 50, 60, 70, 80, 90 deg, or None for peak 90 deg)
+target_elevation_angle = 50.0   # Desired nominal elevation angle in degrees (e.g. 50.0)
+
 # =========================================================================
 # 2. SYSTEM SIMULATION CONFIGURATION & DATASETS CONFIGURATION
 # =========================================================================
-tdl_model_name = "NTN-TDL-D"   # Options: "NTN-TDL-A" (NLOS), "NTN-TDL-B" (NLOS), "NTN-TDL-C" (LOS), "NTN-TDL-D" (LOS)
+tdl_model_name = "NTN-TDL-A"   # Options: "NTN-TDL-A" (NLOS), "NTN-TDL-B" (NLOS), "NTN-TDL-C" (LOS), "NTN-TDL-D" (LOS)
 carrier_frequency = 27e9     # DL carrier frequency (Hz)
 direction = "downlink"
 num_ut = 1
@@ -123,7 +137,7 @@ z_val = 1.5                      # Standard mobile antenna height (m)
 v_min, v_max = 20.0, 30.0        # ground speed in m/s
 r_beam = 15000.0                 # 15 km beam footprint radius
 r_ue_max = 14500.0               # Maximum initial radius for UE generation (14.5 km)
-delay_spread_ns_custom = 50 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
+delay_spread_ns_custom = 200 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
 
 # ----------------- Generate Randomized UE Positions & Velocities -----------------
 np.random.seed(42)
@@ -164,6 +178,41 @@ u_los_all = v_los_all / slant_ranges_all[:, np.newaxis]
 elev_rad_all = np.arcsin(np.sum(u_normal_all * u_los_all, axis=1))
 elevation_angles_all = np.degrees(elev_rad_all)
 
+# Calculate orbital pass timeline (from 10 deg horizon rise to 10 deg horizon set)
+theta_horizon_rad = np.deg2rad(10.0) # 3GPP minimum operational elevation angle
+gamma_horizon = np.pi / 2.0 - theta_horizon_rad - np.arcsin((a_wgs84 / r_orbit) * np.cos(theta_horizon_rad))
+t_pass_half = float(gamma_horizon / omega_s)
+
+t_min = -t_pass_half
+t_max = +t_pass_half
+
+# Satellite position at t_min, t=0, and t_max
+r_sat_min, _ = get_satellite_state_ecef(t_min, omega_s, u_mid, Omega_RAAN, inclination, r_orbit, v_sat_orbit, omega_E)
+r_sat_peak, _ = get_satellite_state_ecef(0.0, omega_s, u_mid, Omega_RAAN, inclination, r_orbit, v_sat_orbit, omega_E)
+r_sat_max, _ = get_satellite_state_ecef(t_max, omega_s, u_mid, Omega_RAAN, inclination, r_orbit, v_sat_orbit, omega_E)
+
+def calc_elev_at_t(r_sat_pos):
+    v_l = r_sat_pos - r_ue_ECEF_0
+    u_l = v_l / np.linalg.norm(v_l)
+    return float(np.degrees(np.arcsin(np.dot(u_normal, u_l))))
+
+elev_at_tmin = calc_elev_at_t(r_sat_min)
+elev_at_tpeak = calc_elev_at_t(r_sat_peak)
+elev_at_tmax = calc_elev_at_t(r_sat_max)
+
+# Print elevation angle timeline details
+print("=" * 70)
+print("SATELLITE ORBITAL PASS & ELEVATION ANGLE TIMELINE")
+print(f"1. Satellite Pass Start (t_start = {t_min:.1f} s) : Elevation = {elev_at_tmin:.2f}° (Horizon Rise)")
+print(f"2. Peak Zenith Approach  (t_peak  = 0.0 s)     : Elevation = {elev_at_tpeak:.2f}° (Overhead Peak)")
+print(f"3. Dataset Snapshot Point(t_snap  = {t_snapshot:.1f} s) : Elevation = {elevation_angle_nom:.2f}° (Single Position Generated)")
+print(f"4. Satellite Pass End   (t_end    = {t_max:.1f} s) : Elevation = {elev_at_tmax:.2f}° (Horizon Set)")
+print(f"\nSpatial Elevation Angle Variation Across 15km Beam Footprint ({N_samples} Randomized UEs):")
+print(f"   - UE Farthest from Satellite (Min Elevation) : {np.min(elevation_angles_all):.2f}°")
+print(f"   - UE Closest to Satellite  (Max Elevation) : {np.max(elevation_angles_all):.2f}°")
+print(f"   - Average Across All UEs   (Mean Elevation): {np.mean(elevation_angles_all):.2f}°")
+print("=" * 70 + "\n")
+
 # ----------------- Resource Grid Setup -----------------
 ut_array = Antenna(polarization="single",
                     polarization_type="V",
@@ -193,10 +242,10 @@ rg = ResourceGrid(num_ofdm_symbols=14,
                     num_guard_carriers=(62, 62),
                     dc_null=False, 
                     pilot_pattern="kronecker",
-                    pilot_ofdm_symbol_indices=[2, 7, 11])
+                    pilot_ofdm_symbol_indices=[2, 11])
 
 frequencies = subcarrier_frequencies(rg.fft_size, rg.subcarrier_spacing)
-pilot_mask = tf.squeeze(rg.pilot_pattern.mask).numpy()
+pilot_mask = tf.squeeze(rg.pilot_pattern.mask).numpy().astype(bool)
 pilot_symbols, pilot_subcarriers = np.where(pilot_mask)
 qpsk_symbols = np.array([1+1j, 1-1j, -1+1j, -1-1j], dtype=np.complex64) / np.sqrt(2)
 
@@ -204,6 +253,7 @@ qpsk_symbols = np.array([1+1j, 1-1j, -1+1j, -1-1j], dtype=np.complex64) / np.sqr
 # 3. HELPER INTERPOLATOR
 # =========================================================================
 def interpolate_channel(rx_grid_b, tx_grid_b, pilot_mask):
+    pilot_mask = pilot_mask.astype(bool)
     h_est = np.zeros_like(rx_grid_b)
     h_est[pilot_mask] = rx_grid_b[pilot_mask] / tx_grid_b[pilot_mask]
     
@@ -279,21 +329,22 @@ channel_seed = 42
 
 # Setup outputs directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
+elev_tag = f"_{int(round(elevation_angle_nom / 10.0) * 10)}deg"
 if delay_spread_ns_custom is not None:
-    setting_dir = f"{tdl_model_name}_{int(delay_spread_ns_custom)}ns_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
+    setting_dir = f"{tdl_model_name}_{int(delay_spread_ns_custom)}ns_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
 else:
-    setting_dir = f"{tdl_model_name}_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
+    setting_dir = f"{tdl_model_name}_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
 output_dir = os.path.join(script_dir, "results", setting_dir, f"{int(SNR_dB)}dB")
 os.makedirs(output_dir, exist_ok=True)
 
 # =========================================================================
 # 4. MINI-BATCH CHANNEL GENERATION & ESTIMATION
 # =========================================================================
-H_eff_full_list = []
-H_eff_comp_list = []
-H_LS_full_list = []
+H_extracted_ori_list = []
+H_extracted_comp_list = []
+H_LS_ori_list = []
 H_LS_comp_list = []
-H_interp_full_list = []
+H_interp_ori_list = []
 H_interp_comp_list = []
 delay_spreads_all = []
 nmse_ls_list = []
@@ -354,38 +405,38 @@ for b in range(num_batches):
             delay_spreads_all.append(rms_ds)
             
     tf.random.set_seed(iteration_seed)
-    h_freq_full = ofdm_channel_full(batch_size=current_batch_size)
-    h_eff_full = remove_nulled(h_freq_full)
-    h_eff_siso_full = h_eff_full[:, 0, 0, 0, 0, :, :].numpy()  # shape [current_batch_size, 14, 132]
+    H_full_ori = ofdm_channel_full(batch_size=current_batch_size)
+    h_eff_full = remove_nulled(H_full_ori)
+    H_extracted_ori = h_eff_full[:, 0, 0, 0, 0, :, :].numpy()  # shape [current_batch_size, 14, 132]
     
     # ------------------ Part 2: Precompensated Channel ------------------
     tf.random.set_seed(iteration_seed)
     path_coefficients_comp, path_delays_comp = tdl_comp(current_batch_size, num_time_steps, sampling_frequency)
     
     tf.random.set_seed(iteration_seed)
-    h_freq_comp = ofdm_channel_comp(batch_size=current_batch_size)
-    h_eff_comp = remove_nulled(h_freq_comp)
-    h_eff_siso_comp = h_eff_comp[:, 0, 0, 0, 0, :, :].numpy()  # shape [current_batch_size, 14, 132]
+    H_full_comp = ofdm_channel_comp(batch_size=current_batch_size)
+    h_eff_comp = remove_nulled(H_full_comp)
+    H_extracted_comp = h_eff_comp[:, 0, 0, 0, 0, :, :].numpy()  # shape [current_batch_size, 14, 132]
     
     # ------------------ Part 3: Channel Estimation & Interpolation ------------------
     np.random.seed(iteration_seed)
     tx_grid = np.random.choice(qpsk_symbols, size=[current_batch_size, 14, 132])
     
     np.random.seed(iteration_seed + 10)
-    noise_pattern = (np.random.randn(*h_eff_siso_full.shape) + 1j * np.random.randn(*h_eff_siso_full.shape))
+    noise_pattern = (np.random.randn(*H_extracted_ori.shape) + 1j * np.random.randn(*H_extracted_ori.shape))
     
-    # Full Doppler LS estimation
-    rx_signal_clean_full = tx_grid * h_eff_siso_full
-    sig_power_full = np.mean(np.abs(rx_signal_clean_full) ** 2, axis=(1, 2), keepdims=True)
-    noise_var_full = sig_power_full / SNR_linear
-    noise_realized_full = noise_pattern * np.sqrt(noise_var_full / 2.0)
-    rx_grid_full = rx_signal_clean_full + noise_realized_full
+    # Full Doppler LS estimation (Original Uncompensated)
+    rx_signal_clean_ori = tx_grid * H_extracted_ori
+    sig_power_ori = np.mean(np.abs(rx_signal_clean_ori) ** 2, axis=(1, 2), keepdims=True)
+    noise_var_ori = sig_power_ori / SNR_linear
+    noise_realized_ori = noise_pattern * np.sqrt(noise_var_ori / 2.0)
+    rx_grid_ori = rx_signal_clean_ori + noise_realized_ori
     
-    h_LS_full = rx_grid_full / tx_grid
-    h_LS_pilots_full = h_LS_full[:, pilot_symbols, pilot_subcarriers]
+    h_LS_ori = rx_grid_ori / tx_grid
+    h_LS_pilots_ori = h_LS_ori[:, pilot_symbols, pilot_subcarriers]
     
     # Precompensated LS estimation
-    rx_signal_clean_comp = tx_grid * h_eff_siso_comp
+    rx_signal_clean_comp = tx_grid * H_extracted_comp
     sig_power_comp = np.mean(np.abs(rx_signal_clean_comp) ** 2, axis=(1, 2), keepdims=True)
     noise_var_comp = sig_power_comp / SNR_linear
     noise_realized_comp = noise_pattern * np.sqrt(noise_var_comp / 2.0)
@@ -395,75 +446,83 @@ for b in range(num_batches):
     h_LS_pilots_comp = h_LS_comp[:, pilot_symbols, pilot_subcarriers]
     
     # Interpolation
-    h_interp_full_batch = []
+    h_interp_ori_batch = []
     h_interp_comp_batch = []
     for idx_in_batch in range(current_batch_size):
-        h_interp_f = interpolate_channel(rx_grid_full[idx_in_batch], tx_grid[idx_in_batch], pilot_mask)
+        h_interp_o = interpolate_channel(rx_grid_ori[idx_in_batch], tx_grid[idx_in_batch], pilot_mask)
         h_interp_c = interpolate_channel(rx_grid_comp[idx_in_batch], tx_grid[idx_in_batch], pilot_mask)
-        h_interp_full_batch.append(h_interp_f)
+        h_interp_ori_batch.append(h_interp_o)
         h_interp_comp_batch.append(h_interp_c)
         
-    h_interp_full_batch = np.stack(h_interp_full_batch, axis=0)
+    h_interp_ori_batch = np.stack(h_interp_ori_batch, axis=0)
     h_interp_comp_batch = np.stack(h_interp_comp_batch, axis=0)
     
-    # Calculate batch NMSE and SSIM values
+    nmse_ls_list = []
+    nmse_ls_pilot_list = []
+    nmse_li_list = []
+    nmse_li_ori_list = []
+    ssim_ls_list = []
+    ssim_li_list = []
+    ssim_li_ori_list = []
+    
     nmse_ls_batch = []
     nmse_ls_pilot_batch = []
-    nmse_prac_batch = []
     nmse_li_batch = []
+    nmse_li_ori_batch = []
     ssim_ls_batch = []
-    ssim_prac_batch = []
     ssim_li_batch = []
+    ssim_li_ori_batch = []
+    
     for idx_in_batch in range(current_batch_size):
-        h_eff_c = h_eff_siso_comp[idx_in_batch]
-        h_eff_f = h_eff_siso_full[idx_in_batch]
+        h_ext_c = H_extracted_comp[idx_in_batch]
+        h_ext_o = H_extracted_ori[idx_in_batch]
         
         # LS estimated full grid (un-interpolated)
         h_ls_c = h_LS_comp[idx_in_batch]
         
-        # NMSE LS full
-        n_ls = np.sum(np.abs(h_eff_c - h_ls_c)**2) / np.sum(np.abs(h_eff_c)**2)
+        # NMSE LS (compensated)
+        n_ls = np.sum(np.abs(h_ext_c - h_ls_c)**2) / np.sum(np.abs(h_ext_c)**2)
         nmse_ls_batch.append(n_ls)
         
         # NMSE LS pilots (only at pilot locations)
-        h_eff_pilots = h_eff_c[pilot_symbols, pilot_subcarriers]
+        h_eff_pilots = h_ext_c[pilot_symbols, pilot_subcarriers]
         h_ls_pilots = h_LS_pilots_comp[idx_in_batch]
         n_ls_p = np.sum(np.abs(h_eff_pilots - h_ls_pilots)**2) / np.sum(np.abs(h_eff_pilots)**2)
         nmse_ls_pilot_batch.append(n_ls_p)
         
-        # NMSE prac (interpolated precompensated)
+        # NMSE LI (interpolated compensated)
         h_interp_c = h_interp_comp_batch[idx_in_batch]
-        n_prac = np.sum(np.abs(h_eff_c - h_interp_c)**2) / np.sum(np.abs(h_eff_c)**2)
-        nmse_prac_batch.append(n_prac)
-        
-        # NMSE li (interpolated uncompensated)
-        h_interp_f = h_interp_full_batch[idx_in_batch]
-        n_li = np.sum(np.abs(h_eff_f - h_interp_f)**2) / np.sum(np.abs(h_eff_f)**2)
+        n_li = np.sum(np.abs(h_ext_c - h_interp_c)**2) / np.sum(np.abs(h_ext_c)**2)
         nmse_li_batch.append(n_li)
         
-        # Calculate batch SSIM values
-        s_ls = compute_complex_ssim(h_eff_c, h_ls_c)
-        s_prac = compute_complex_ssim(h_eff_c, h_interp_c)
-        s_li = compute_complex_ssim(h_eff_c, h_interp_f)
+        # NMSE LI ori (interpolated uncompensated)
+        h_interp_o = h_interp_ori_batch[idx_in_batch]
+        n_li_ori = np.sum(np.abs(h_ext_o - h_interp_o)**2) / np.sum(np.abs(h_ext_o)**2)
+        nmse_li_ori_batch.append(n_li_ori)
+        
+        # SSIM values
+        s_ls = compute_complex_ssim(h_ext_c, h_ls_c)
+        s_li = compute_complex_ssim(h_ext_c, h_interp_c)
+        s_li_ori = compute_complex_ssim(h_ext_o, h_interp_o)
         
         ssim_ls_batch.append(s_ls)
-        ssim_prac_batch.append(s_prac)
         ssim_li_batch.append(s_li)
+        ssim_li_ori_batch.append(s_li_ori)
         
     nmse_ls_list.extend(nmse_ls_batch)
     nmse_ls_pilot_list.extend(nmse_ls_pilot_batch)
-    nmse_prac_list.extend(nmse_prac_batch)
     nmse_li_list.extend(nmse_li_batch)
+    nmse_li_ori_list.extend(nmse_li_ori_batch)
     ssim_ls_list.extend(ssim_ls_batch)
-    ssim_prac_list.extend(ssim_prac_batch)
     ssim_li_list.extend(ssim_li_batch)
+    ssim_li_ori_list.extend(ssim_li_ori_batch)
     
     # Accumulate batch results
-    H_eff_full_list.append(h_eff_siso_full)
-    H_eff_comp_list.append(h_eff_siso_comp)
-    H_LS_full_list.append(h_LS_pilots_full)
+    H_extracted_ori_list.append(H_extracted_ori)
+    H_extracted_comp_list.append(H_extracted_comp)
+    H_LS_ori_list.append(h_LS_pilots_ori)
     H_LS_comp_list.append(h_LS_pilots_comp)
-    H_interp_full_list.append(h_interp_full_batch)
+    H_interp_ori_list.append(h_interp_ori_batch)
     H_interp_comp_list.append(h_interp_comp_batch)
     
     # 4. Plots ONLY for the very first batch, first sample
@@ -501,6 +560,11 @@ for b in range(num_batches):
             for i in range(100):
                 circle_ECEF[:, i] = circle_ECEF[:, i] * (norm_r_ue_0 / np.linalg.norm(circle_ECEF[:, i]))
             
+            # Calculate satellite state at t = 0.0 (peak zenith overhead 90 deg) for 3D geometry plotting
+            r_sat_ECEF_plot0, v_sat_ECEF_plot0 = get_satellite_state_ecef(
+                0.0, omega_s, u_mid, Omega_RAAN, inclination, r_orbit, v_sat_orbit, omega_E
+            )
+
             fig_ecef = plt.figure(figsize=(10, 8), facecolor='white')
             ax_ecef = fig_ecef.add_subplot(111, projection='3d')
             ax_ecef.set_facecolor('white')
@@ -513,20 +577,21 @@ for b in range(num_batches):
             ax_ecef.plot(circle_ECEF[0], circle_ECEF[1], circle_ECEF[2], color='purple', linewidth=2, label='Beam Footprint (15 km radius)')
             ax_ecef.scatter(r_ue_ECEF_0[0], r_ue_ECEF_0[1], r_ue_ECEF_0[2], color='purple', marker='X', s=120, edgecolor='w', label='Beam Center')
             
-            ax_ecef.scatter(r_sat_ECEF[0], r_sat_ECEF[1], r_sat_ECEF[2], color=(0.85, 0.60, 0.05), s=150, edgecolor='w', label='LEO Satellite')
+            # Plot Satellite at t = 0.0 (Peak Zenith Overhead)
+            ax_ecef.scatter(r_sat_ECEF_plot0[0], r_sat_ECEF_plot0[1], r_sat_ECEF_plot0[2], color=(0.85, 0.60, 0.05), s=150, edgecolor='w', label='LEO Satellite (t = 0 s, 90° Zenith)')
             ax_ecef.scatter(r_ue_ECEF_all[0, 0], r_ue_ECEF_all[0, 1], r_ue_ECEF_all[0, 2], color=(0.85, 0.20, 0.20), s=100, edgecolor='w', label='UE 0')
-            ax_ecef.plot([r_ue_ECEF_all[0, 0], r_sat_ECEF[0]], 
-                         [r_ue_ECEF_all[0, 1], r_sat_ECEF[1]], 
-                         [r_ue_ECEF_all[0, 2], r_sat_ECEF[2]], 
-                         '--', color=(0.6, 0.6, 0.6), linewidth=1.2, label='Line of Sight')
+            ax_ecef.plot([r_ue_ECEF_all[0, 0], r_sat_ECEF_plot0[0]], 
+                         [r_ue_ECEF_all[0, 1], r_sat_ECEF_plot0[1]], 
+                         [r_ue_ECEF_all[0, 2], r_sat_ECEF_plot0[2]], 
+                         '--', color=(0.6, 0.6, 0.6), linewidth=1.2, label='Line of Sight (t = 0 s)')
             
             # Draw Velocity Vectors (scaled for WGS-84 scale)
             vel_scale_sat = 1.0e5 / 7500 * 5
             vel_scale_ue = 1.0e5 / 50 * 3.5
-            v_sat_scaled = v_sat_ECEF * vel_scale_sat
+            v_sat_scaled = v_sat_ECEF_plot0 * vel_scale_sat
             v_ue_scaled = ue_vel_ECEF_all[0] * vel_scale_ue
 
-            ax_ecef.quiver(r_sat_ECEF[0], r_sat_ECEF[1], r_sat_ECEF[2],
+            ax_ecef.quiver(r_sat_ECEF_plot0[0], r_sat_ECEF_plot0[1], r_sat_ECEF_plot0[2],
                            v_sat_scaled[0], v_sat_scaled[1], v_sat_scaled[2],
                            color=(0.10, 0.65, 0.35), linewidth=1.5, arrow_length_ratio=0.25, label='Satellite Velocity Vector (Scaled)')
             ax_ecef.quiver(r_ue_ECEF_all[0, 0], r_ue_ECEF_all[0, 1], r_ue_ECEF_all[0, 2],
@@ -540,7 +605,7 @@ for b in range(num_batches):
             ax_ecef.set_xlabel('ECEF X (meters)')
             ax_ecef.set_ylabel('ECEF Y (meters)')
             ax_ecef.set_zlabel('ECEF Z (meters)')
-            ax_ecef.set_title(f"3D Geometry Snapshot (ECEF Coordinates)\nNominal Elevation: {elevation_angle_nom:.2f}°")
+            ax_ecef.set_title("3D Geometry Snapshot (ECEF Coordinates)\nPeak Zenith Overhead (t = 0 s, ~90° Elevation)")
             ax_ecef.legend(facecolor='white')
             plt.tight_layout()
             ecef_plot_filename = os.path.join(output_dir, "geometry_ecef.pdf")
@@ -549,8 +614,11 @@ for b in range(num_batches):
         except Exception as ex:
             print(f"Warning: Could not save ECEF plot. Error: {ex}")
             
-        # Plot Local Tangent Plane ENU Topology for UE 0
+        # Plot Local Tangent Plane ENU Topology for UE 0 at t = 0.0 (Peak Zenith Overhead)
         try:
+            bs_loc_ENU_plot0 = ecef_to_enu(r_sat_ECEF_plot0, r_ue_ECEF_0, lambda_UE, phi_UE)
+            v_sat_ENU_plot0 = ecef_to_enu(v_sat_ECEF_plot0, np.zeros(3), lambda_UE, phi_UE)
+
             fig = plt.figure(figsize=(10, 8))
             ax = fig.add_subplot(projection='3d')
             ax.scatter(ut_loc_batch[0, 0], ut_loc_batch[0, 1], ut_loc_batch[0, 2], color='red', s=100, label='User Equipment (UE 0)')
@@ -559,11 +627,11 @@ for b in range(num_batches):
             ax.plot(circle_ENU[0], circle_ENU[1], np.zeros_like(circle_ENU[0]), color='purple', linewidth=2, linestyle='-', label='Beam Footprint (15 km)')
             ax.scatter(0, 0, 0, color='purple', marker='X', s=120, edgecolor='w', label='Beam Center')
             
-            ax.scatter(bs_loc_ENU[0], bs_loc_ENU[1], bs_loc_ENU[2], color='blue', s=200, label='LEO Satellite')
-            ax.plot([ut_loc_batch[0, 0], bs_loc_ENU[0]], 
-                    [ut_loc_batch[0, 1], bs_loc_ENU[1]], 
-                    [ut_loc_batch[0, 2], bs_loc_ENU[2]], 
-                    color='gray', linestyle='--', alpha=0.7, label='Line of Sight')
+            ax.scatter(bs_loc_ENU_plot0[0], bs_loc_ENU_plot0[1], bs_loc_ENU_plot0[2], color='blue', s=200, label='LEO Satellite (t = 0 s, 90° Zenith)')
+            ax.plot([ut_loc_batch[0, 0], bs_loc_ENU_plot0[0]], 
+                    [ut_loc_batch[0, 1], bs_loc_ENU_plot0[1]], 
+                    [ut_loc_batch[0, 2], bs_loc_ENU_plot0[2]], 
+                    color='gray', linestyle='--', alpha=0.7, label='Line of Sight (t = 0 s)')
             
             grid_range = 25000.0
             x_grid, y_grid = np.meshgrid(np.linspace(-grid_range, grid_range, 10), np.linspace(-grid_range, grid_range, 10))
@@ -576,14 +644,14 @@ for b in range(num_batches):
                       color='orange', linewidth=2, label='UE 0 Velocity (Scaled)')
             
             scale_sat_vel = 5.0
-            ax.quiver(bs_loc_ENU[0], bs_loc_ENU[1], bs_loc_ENU[2],
-                      v_sat_ENU[0]*scale_sat_vel, v_sat_ENU[1]*scale_sat_vel, v_sat_ENU[2]*scale_sat_vel,
+            ax.quiver(bs_loc_ENU_plot0[0], bs_loc_ENU_plot0[1], bs_loc_ENU_plot0[2],
+                      v_sat_ENU_plot0[0]*scale_sat_vel, v_sat_ENU_plot0[1]*scale_sat_vel, v_sat_ENU_plot0[2]*scale_sat_vel,
                       color='cyan', linewidth=2, label='Satellite Velocity (Scaled)')
             
             ax.set_xlabel('East (meters)')
             ax.set_ylabel('North (meters)')
             ax.set_zlabel('Up (meters)')
-            ax.set_title(f"3D Geometry (Local Tangent Plane ENU)\nUE 0 Elevation: {elevation_angles_all[0]:.2f}°")
+            ax.set_title("3D Geometry (Local Tangent Plane ENU)\nPeak Zenith Overhead (t = 0 s, ~90° Elevation)")
             ax.legend()
             plt.tight_layout()
             plot_filename = os.path.join(output_dir, "geometry_plot.pdf")
@@ -594,8 +662,8 @@ for b in range(num_batches):
             
         # Plot Channels (Transposed, viridis colormap, cropped)
         try:
-            real_full_t = np.real(h_eff_siso_full[0]).T
-            real_comp_t = np.real(h_eff_siso_comp[0]).T
+            real_full_t = np.real(H_extracted_ori[0]).T
+            real_comp_t = np.real(H_extracted_comp[0]).T
             
             fig0, ax0 = plt.subplots(figsize=(8, 5), facecolor='white')
             im0 = ax0.imshow(real_full_t, aspect='auto', cmap='viridis', origin='lower')
@@ -622,33 +690,34 @@ for b in range(num_batches):
             print(f"Warning: Could not save channel plots. Error: {ex}")
 
 # Concatenate all batched results
-H_eff_full = np.concatenate(H_eff_full_list, axis=0)
-H_eff_comp = np.concatenate(H_eff_comp_list, axis=0)
-H_LS_full = np.concatenate(H_LS_full_list, axis=0)
-H_LS_comp = np.concatenate(H_LS_comp_list, axis=0)
-H_interp_full = np.concatenate(H_interp_full_list, axis=0)
-H_interp_comp = np.concatenate(H_interp_comp_list, axis=0)
+H_extracted_ori_all = np.concatenate(H_extracted_ori_list, axis=0)
+H_extracted_comp_all = np.concatenate(H_extracted_comp_list, axis=0)
+H_LS_ori_all = np.concatenate(H_LS_ori_list, axis=0)
+H_LS_comp_all = np.concatenate(H_LS_comp_list, axis=0)
+H_interp_ori_all = np.concatenate(H_interp_ori_list, axis=0)
+H_interp_comp_all = np.concatenate(H_interp_comp_list, axis=0)
 
 # Convert channel grids to MATLAB shape [14, 132, N_samples]
-H_perfect = np.transpose(H_eff_comp, (1, 2, 0))      # [14, 132, N_samples]
-H_perfect_ori = np.transpose(H_eff_full, (1, 2, 0))  # [14, 132, N_samples]
-H_prac = np.transpose(H_interp_comp, (1, 2, 0))      # [14, 132, N_samples]
-H_li = np.transpose(H_interp_full, (1, 2, 0))        # [14, 132, N_samples]
-H_ls_pilots = np.transpose(H_LS_comp, (1, 0))        # [numPilots, N_samples]
+H_perfect = np.transpose(H_extracted_comp_all, (1, 2, 0))        # [14, 132, N_samples] (Compensated)
+H_perfect_ori = np.transpose(H_extracted_ori_all, (1, 2, 0))    # [14, 132, N_samples] (Uncompensated)
+H_prac = np.array([], dtype=np.complex64)                       # Empty matrix to save storage space
+H_li = np.transpose(H_interp_comp_all, (1, 2, 0))               # [14, 132, N_samples] (LS+LI on Compensated)
+H_li_ori = np.transpose(H_interp_ori_all, (1, 2, 0))             # [14, 132, N_samples] (LS+LI on Uncompensated)
+H_ls_pilots = np.transpose(H_LS_comp_all, (1, 0))               # [numPilots, N_samples] (Compensated)
+H_ls_pilots_ori = np.transpose(H_LS_ori_all, (1, 0))             # [numPilots, N_samples] (Uncompensated)
 
-# Pilot positions and indices (MATLAB style: 1-indexed, column-major)
+# Pilot positions (MATLAB style: 1-indexed)
 pilot_rows = pilot_subcarriers + 1
 pilot_cols = pilot_symbols + 1
-pilot_indices = (pilot_cols - 1) * 132 + pilot_rows
 
 # Convert NMSE lists to arrays, and average SSIM lists to scalars
-nmse_prac = np.array(nmse_prac_list)
 nmse_ls = np.array(nmse_ls_list)
 nmse_ls_pilot = np.array(nmse_ls_pilot_list)
 nmse_li = np.array(nmse_li_list)
-ssim_prac = float(np.mean(ssim_prac_list)) if len(ssim_prac_list) > 0 else 0.0
+nmse_li_ori = np.array(nmse_li_ori_list)
 ssim_ls = float(np.mean(ssim_ls_list)) if len(ssim_ls_list) > 0 else 0.0
 ssim_li = float(np.mean(ssim_li_list)) if len(ssim_li_list) > 0 else 0.0
+ssim_li_ori = float(np.mean(ssim_li_ori_list)) if len(ssim_li_ori_list) > 0 else 0.0
 
 # Calculate nominal common Doppler shift at the beam center (ENU [0,0,0])
 lambda_0 = SPEED_OF_LIGHT / carrier_frequency
@@ -665,17 +734,18 @@ mat_data = {
     "H_perfect_ori": H_perfect_ori,
     "H_prac": H_prac,
     "H_li": H_li,
+    "H_li_ori": H_li_ori,
     "H_ls_pilots": H_ls_pilots,
-    "pilot_indices": pilot_indices,
+    "H_ls_pilots_ori": H_ls_pilots_ori,
     "pilot_rows": pilot_rows,
     "pilot_cols": pilot_cols,
-    "nmse_prac": nmse_prac,
     "nmse_ls": nmse_ls,
     "nmse_ls_pilot": nmse_ls_pilot,
     "nmse_li": nmse_li,
-    "ssim_prac": ssim_prac,
+    "nmse_li_ori": nmse_li_ori,
     "ssim_ls": ssim_ls,
     "ssim_li": ssim_li,
+    "ssim_li_ori": ssim_li_ori,
     "doppler_sat_bc": doppler_sat_bc,
     
     # Metadata and other parameters
@@ -685,11 +755,7 @@ mat_data = {
     "ut_velocity_ENU": ut_velocity_ENU_all, 
     "bs_loc_ENU": bs_loc_ENU,
     "bs_velocity_ENU": v_sat_ENU,
-    "sat_speed": float(sat_speed),
-    "nominal_elevation_angle": elevation_angle_nom,
-    "nominal_slant_range": slant_range_nom,
-    "elevation_angles_all": elevation_angles_all,
-    "slant_ranges_all": slant_ranges_all
+    "sat_speed": float(sat_speed)
 }
 savemat(mat_filename, mat_data)
 print(f"Successfully saved batched randomized channel data of {N_samples} samples to {mat_filename}")
@@ -702,7 +768,7 @@ max_delay_spread_ns = np.max(delay_spreads_ns) if len(delay_spreads_ns) > 0 else
 
 md_filename = os.path.join(output_dir, f"readme_{tdl_model_name}_randomizedUE.md")
 
-ds_val_str = f"{delay_spread_ns_custom:.1f} ns (Custom Overridden)" if delay_spread_ns_custom is not None else "Standard 3GPP TR 38.811"
+target_elev_str = f"{target_elevation_angle:.1f}°" if target_elevation_angle is not None else "90.0° (Peak Zenith Overhead)"
 
 md_content = f"""# Channel & Geometry Generation Settings - {tdl_model_name} (Randomized UE)
 
@@ -710,7 +776,8 @@ md_content = f"""# Channel & Geometry Generation Settings - {tdl_model_name} (Ra
 - **Carrier Frequency**: {carrier_frequency / 1e9:.2f} GHz
 - **Link Direction**: {direction}
 - **Satellite (LEO) Height**: {satellite_height / 1000:.0f} km
-- **Satellite Nominal Elevation Angle**: {elevation_angle_nom:.2f} degrees
+- **Configured Target Elevation Angle**: {target_elev_str}
+- **Nominal Beam-Center Elevation Angle**: {elevation_angle_nom:.2f}° (Snapshot time t = {t_snapshot:.1f} s)
 - **Subcarrier Spacing (SCS)**: {SCS / 1e3:.0f} kHz
 - **FFT Size**: {nFFT}
 - **Active Subcarriers**: 132 (out of {nFFT})
@@ -721,8 +788,19 @@ md_content = f"""# Channel & Geometry Generation Settings - {tdl_model_name} (Ra
 - **Target Delay Spread Configuration**: {ds_val_str}
 - **Average RMS Delay Spread (Realized)**: {avg_delay_spread_ns:.2f} ns (Range: [{min_delay_spread_ns:.2f}, {max_delay_spread_ns:.2f}] ns)
 
+## Satellite Orbital Pass & Elevation Angle Timeline
+- **Pass Start (t_start = {t_min:.1f} s)**: Elevation = {elev_at_tmin:.2f}° (Horizon Rise)
+- **Peak Zenith (t_peak = 0.0 s)**: Elevation = {elev_at_tpeak:.2f}° (Overhead Peak)
+- **Snapshot Point (t_snap = {t_snapshot:.1f} s)**: Elevation = {elevation_angle_nom:.2f}° (Single Position Generated)
+- **Pass End (t_end = {t_max:.1f} s)**: Elevation = {elev_at_tmax:.2f}° (Horizon Set)
+
+## Spatial Elevation Variation Across 15km Beam Footprint ({N_samples} UEs)
+- **UE Farthest from Satellite (Min Elevation)**: {np.min(elevation_angles_all):.2f}°
+- **UE Closest to Satellite (Max Elevation)**: {np.max(elevation_angles_all):.2f}°
+- **Average Across All UEs (Mean Elevation)**: {np.mean(elevation_angles_all):.2f}°
+
 ## Satellite (LEO) Settings (Fixed Snapshot)
-- **Temporal State**: Single snapshot at orbital closest approach ($t = 0$ seconds)
+- **Temporal State**: Single snapshot at orbital time $t = {t_snapshot:.1f}$ seconds
 - **Satellite Position (ENU)**: Fixed at [{bs_loc_ENU[0]:.2f}, {bs_loc_ENU[1]:.2f}, {bs_loc_ENU[2]:.2f}] meters
 - **Satellite Velocity Vector (ENU)**: Fixed at [{v_sat_ENU[0]:.2f}, {v_sat_ENU[1]:.2f}, {v_sat_ENU[2]:.2f}] m/s (Speed: {sat_speed:.2f} m/s)
 

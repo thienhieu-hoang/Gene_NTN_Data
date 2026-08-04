@@ -13,7 +13,7 @@ $$h_{\text{original}}(t) = h(t) \cdot e^{j 2\pi f_d t}$$
 
 Without Tx precompensation, the received waveform experiences severe carrier frequency offset (CFO) and inter-carrier interference (ICI):
 
-$$\text{txWaveform } x(t) \xrightarrow{\quad h_{\text{original}} \quad} \text{rxWaveform } y(t) = (x * h_{\text{original}})(t) + n(t) = (x * h)(t) \cdot e^{j 2\pi f_d t} + n(t)$$
+$$\text{txWaveform } x(t) \stackrel{h_{\text{original}}}{\longrightarrow} \text{rxWaveform } y(t) = (x * h_{\text{original}})(t) + n(t) = (x * h)(t) \cdot e^{j 2\pi f_d t} + n(t)$$
 
 where:
 - $h(t, \tau)$ is the base multipath channel impulse response.
@@ -45,7 +45,6 @@ To mitigate large Doppler frequency offsets before the signal reaches the receiv
      $$Y_{\text{comp}} = X_{\text{comp}} \odot H_{\text{original}} + N$$
    - Effective Channel grid:
      $$Y_{\text{comp}} = X \odot H_{\text{effective}} + N$$
-
 
 ---
 
