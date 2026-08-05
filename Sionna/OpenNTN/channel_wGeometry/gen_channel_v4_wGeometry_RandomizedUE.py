@@ -40,25 +40,25 @@ SPEED_OF_LIGHT = 299792458.0
 
 # satellite_height = 600000.0  # LEO Orbit altitude (m) (600 km)
 # scenario = "sur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
-# carrier_frequency = 2.18e9     # DL carrier frequency (Hz)
-# SCS = 30e3
+carrier_frequency = 2.18e9     # DL carrier frequency (Hz)
+SCS = 30e3
 # delay_spread_ns_custom = 20 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
 
 satellite_height = 1000000.0  # LEO Orbit altitude (m) (600 km)
-scenario = "dur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
-carrier_frequency = 20e9     # DL carrier frequency (Hz)
-SCS = 120e3
+scenario = "sur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
+# carrier_frequency = 20e9     # DL carrier frequency (Hz)
+# SCS = 120e3
 delay_spread_ns_custom = 100 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
 
 v_min, v_max = 20.0, 30.0        # UE ground speed in m/s
 
 # Total samples to generate (N_samples)
-N_samples = 16 #512
+N_samples = 16
 batch_size = 8 #32
 # Target Elevation Angle Configuration (e.g. 20, 30, 40, 50, 60, 70, 80, 90 deg, or None for peak 90 deg)
-target_elevation_angle = 50.0   # Desired nominal elevation angle in degrees (e.g. 50.0)
+target_elevation_angle = 70.0   # Desired nominal elevation angle in degrees (e.g. 50.0)
 
-SNR_dB = 15
+SNR_dB = -5
 
 # =========================================================================
 
@@ -344,10 +344,17 @@ channel_seed = 42
 # Setup outputs directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
 elev_tag = f"_{int(round(elevation_angle_nom / 10.0) * 10)}deg"
-if delay_spread_ns_custom is not None:
-    setting_dir = f"{scenario.upper()}{int(delay_spread_ns_custom)}ns_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
+
+fc_ghz = carrier_frequency / 1e9
+if fc_ghz == int(fc_ghz):
+    fc_str = f"{int(fc_ghz)}G"
 else:
-    setting_dir = f"{scenario.upper()}_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
+    fc_str = f"{fc_ghz:.2f}".rstrip('0').rstrip('.').replace('.', 'p') + "G"
+
+if delay_spread_ns_custom is not None:
+    setting_dir = f"{scenario.upper()}{int(delay_spread_ns_custom)}ns_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
+else:
+    setting_dir = f"{scenario.upper()}_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
 output_dir = os.path.join(script_dir, "results", setting_dir, f"{int(SNR_dB)}dB")
 os.makedirs(output_dir, exist_ok=True)
 
@@ -428,18 +435,21 @@ for b in range(num_batches):
             
     tf.random.set_seed(iteration_seed)
     H_full_ori = ofdm_channel()
-    h_eff_full = remove_nulled(H_full_ori)
-    H_extracted_ori = h_eff_full[:, 0, 0, 0, 0, :, :].numpy()  # shape [current_batch_size, 14, 132]
+    h_extracted_ori_ = remove_nulled(H_full_ori)
+    H_extracted_ori = h_extracted_ori_[:, 0, 0, 0, 0, :, :].numpy()  # shape [current_batch_size, 14, 132]
     
     # ------------------ Part 2: Precompensated Channel ------------------
+    # Precompensate satellite Doppler by setting satellite velocity to zero
+    channel_model.set_topology(ut_loc_tensor, bs_loc_tensor, ut_orientations, bs_orientations,
+                               ut_velocities_tensor, tf.zeros_like(bs_velocities_tensor), in_state, los=True)
     channel_model._scenario._doppler_mode = 'precompensated'
     tf.random.set_seed(iteration_seed)
     path_coefficients_comp, path_delays_comp = channel_model(num_time_steps, sampling_frequency)
     
     tf.random.set_seed(iteration_seed)
     H_full_comp = ofdm_channel()
-    h_eff_comp = remove_nulled(H_full_comp)
-    H_extracted_comp = h_eff_comp[:, 0, 0, 0, 0, :, :].numpy()  # shape [current_batch_size, 14, 132]
+    h_extracted_comp_ = remove_nulled(H_full_comp)
+    H_extracted_comp = h_extracted_comp_[:, 0, 0, 0, 0, :, :].numpy()  # shape [current_batch_size, 14, 132]
     
     # ------------------ Part 3: Channel Estimation & Interpolation ------------------
     np.random.seed(iteration_seed)
@@ -690,18 +700,18 @@ for b in range(num_batches):
             
             fig0, ax0 = plt.subplots(figsize=(8, 5), facecolor='white')
             im0 = ax0.imshow(real_full_t, aspect='auto', cmap='viridis', origin='lower')
-            ax0.set_title(f"Full Doppler: Real Part of Channel 0 ({scenario.upper()})\nElevation: {elevation_angles_all[0]:.2f}°")
+            ax0.set_title(f"Original Perfect Channel (Full Doppler): Real Part of Channel 0 ({scenario.upper()})\nElevation: {elevation_angles_all[0]:.2f}°")
             ax0.set_xlabel("OFDM Symbol Index")
             ax0.set_ylabel("Subcarrier Index")
             fig0.colorbar(im0, ax=ax0)
             plt.tight_layout()
-            channel_real_full_filename = os.path.join(output_dir, f"channel_real_full_{scenario}.pdf")
-            plt.savefig(channel_real_full_filename, format='pdf', bbox_inches='tight', pad_inches=0.01)
+            channel_real_ori_filename = os.path.join(output_dir, f"channel_real_ori_{scenario}.pdf")
+            plt.savefig(channel_real_ori_filename, format='pdf', bbox_inches='tight', pad_inches=0.01)
             plt.close(fig0)
             
             fig1, ax1 = plt.subplots(figsize=(8, 5), facecolor='white')
             im1 = ax1.imshow(real_comp_t, aspect='auto', cmap='viridis', origin='lower')
-            ax1.set_title(f"Precompensated Doppler: Real Part of Channel 0 ({scenario.upper()})\nElevation: {elevation_angles_all[0]:.2f}°")
+            ax1.set_title(f"Effective Compensated Channel (Precompensated Satellite Doppler): Real Part of Channel 0 ({scenario.upper()})\nElevation: {elevation_angles_all[0]:.2f}°")
             ax1.set_xlabel("OFDM Symbol Index")
             ax1.set_ylabel("Subcarrier Index")
             fig1.colorbar(im1, ax=ax1)

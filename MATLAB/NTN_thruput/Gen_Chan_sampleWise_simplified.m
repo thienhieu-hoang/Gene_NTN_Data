@@ -1,17 +1,35 @@
 cd(fileparts(matlab.desktop.editor.getActiveFilename))
 addpath('..\helper\')
 
-simParameters.CarrierFrequency = 27e9; % 2.18e9; %19e9; % 2.18e9;                  % Carrier frequency (in Hz)
+carrier = nrCarrierConfig;
+channel = nrTDLChannel; % small-scale coefficient of the channel
+
+% ===========================================================
+SNRdB = 0; %[0 10]; %-15:5:10;
+numUE = 8; %512;
+
+simParameters.CarrierFrequency = 20e9; % Ka band                  % Carrier frequency (in Hz)
 simParameters.SatelliteAltitude = 1000000;
+carrier.SubcarrierSpacing = 120;  % 15, 30, 60, 120, 240 (kHz)
+channel.DelaySpread = 100e-9;
+channel.DelayProfile = 'NTN-TDL-A'; % NLoS: -A, -B
+% simParameters.CarrierFrequency = 2.18e9; % S band                  % Carrier frequency (in Hz)
+% simParameters.SatelliteAltitude = 600000;
+% carrier.SubcarrierSpacing = 30;  % 15, 30, 60, 120, 240 (kHz)
+% channel.DelaySpread = 20e-9;
+% channel.DelayProfile = 'NTN-TDL-D'; % LoS: -C, -D
 
 simParameters.ElevationAngle = 50; % 50                    % Elevation angle (in degrees)
+
 simParameters.MobileSpeed = 30 ; % m/s  % 5*1000/3600;               % Speed of mobile terminal (in m/s)
 simParameters.MobileAltitude = 0;
 
-carrier = nrCarrierConfig;
+% =================================================================
+
 carrier.NSizeGrid = 11;          % Bandwidth in number of resource blocks (52RBs at 15kHz SCS for 10MHz BW)
-carrier.SubcarrierSpacing = 60;  % 15, 30, 60, 120, 240 (kHz)
 carrier.CyclicPrefix = 'Normal'; % 'Normal' or 'Extended'
+
+
 
 waveformInfo = nrOFDMInfo(carrier);
 simParameters.SampleRate = waveformInfo.SampleRate;
@@ -24,9 +42,6 @@ nTxAnts = 1;  % Number of transmit antennas
 nRxAnts = 1;  % Number of receive antennas
 nLayers = min(nTxAnts,nRxAnts);
 
-channel = nrTDLChannel;
-channel.DelayProfile = 'NTN-TDL-A';
-channel.DelaySpread = 200e-9;
 channel.SatelliteDopplerShift = satelliteDopplerShift;
 channel.MaximumDopplerShift = simParameters.MobileSpeed*simParameters.CarrierFrequency/c;
 % channel.MaximumDopplerShift = 0;
@@ -122,9 +137,6 @@ scs_str = [num2str(carrier.SubcarrierSpacing), 'kHz'];
 
 base_folder = sprintf('sampleWiseDoppler_%s%s_%se9_%s_%s', ...
     profile_str, ds_str, fc_str, alt_str, scs_str);
-
-SNRdB = 0; %[0 10]; %-15:5:10;
-numUE = 8; %512;
 
 H_prac = zeros(14, carrier.NSizeGrid*12, numUE); % (14,132,nUE)
 H_li = zeros(size(H_prac));

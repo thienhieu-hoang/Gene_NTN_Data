@@ -330,10 +330,17 @@ channel_seed = 42
 # Setup outputs directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
 elev_tag = f"_{int(round(elevation_angle_nom / 10.0) * 10)}deg"
-if delay_spread_ns_custom is not None:
-    setting_dir = f"{tdl_model_name}_{int(delay_spread_ns_custom)}ns_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
+
+fc_ghz = carrier_frequency / 1e9
+if fc_ghz == int(fc_ghz):
+    fc_str = f"{int(fc_ghz)}G"
 else:
-    setting_dir = f"{tdl_model_name}_{int(carrier_frequency/1e9)}G_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
+    fc_str = f"{fc_ghz:.2f}".rstrip('0').rstrip('.').replace('.', 'p') + "G"
+
+if delay_spread_ns_custom is not None:
+    setting_dir = f"{tdl_model_name}_{int(delay_spread_ns_custom)}ns_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
+else:
+    setting_dir = f"{tdl_model_name}_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
 output_dir = os.path.join(script_dir, "results", setting_dir, f"{int(SNR_dB)}dB")
 os.makedirs(output_dir, exist_ok=True)
 
@@ -667,13 +674,13 @@ for b in range(num_batches):
             
             fig0, ax0 = plt.subplots(figsize=(8, 5), facecolor='white')
             im0 = ax0.imshow(real_full_t, aspect='auto', cmap='viridis', origin='lower')
-            ax0.set_title(f"Full Doppler: Real Part of Channel 0 ({tdl_model_name})\nElevation: {elevation_angles_all[0]:.2f}°")
+            ax0.set_title(f"Original Perfect Channel (Full Doppler): Real Part of Channel 0 ({tdl_model_name})\nElevation: {elevation_angles_all[0]:.2f}°")
             ax0.set_xlabel("OFDM Symbol Index")
             ax0.set_ylabel("Subcarrier Index")
             fig0.colorbar(im0, ax=ax0)
             plt.tight_layout()
-            channel_real_full_filename = os.path.join(output_dir, f"channel_real_full_{tdl_model_name}.pdf")
-            plt.savefig(channel_real_full_filename, format='pdf', bbox_inches='tight', pad_inches=0.01)
+            channel_real_ori_filename = os.path.join(output_dir, f"channel_real_ori_{tdl_model_name}.pdf")
+            plt.savefig(channel_real_ori_filename, format='pdf', bbox_inches='tight', pad_inches=0.01)
             plt.close(fig0)
             
             fig1, ax1 = plt.subplots(figsize=(8, 5), facecolor='white')
