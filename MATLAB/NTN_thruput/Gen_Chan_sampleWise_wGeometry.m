@@ -12,7 +12,7 @@ channel = nrTDLChannel; % small-scale coefficient of the channel
 
 % ========================================================
 SNRdB = -5;
-numUE = 16;
+numUE = 1024;
 r_beam = 15000.0;    % 15 km beam footprint radius
 r_ue_max = 14500.0;  % 14.5 km max UE offset inside beam
 
@@ -23,7 +23,7 @@ r_ue_max = 14500.0;  % 14.5 km max UE offset inside beam
 simParameters.CarrierFrequency = 2.18e9; % S band                      % Carrier frequency (in Hz)
 simParameters.SatelliteAltitude = 600000; % 600 km altitude
 carrier.SubcarrierSpacing = 30;  % 15, 30, 60, 120, 240 (kHz)
-channel.DelaySpread = 20e-9;
+channel.DelaySpread = 200e-9;
 
 simParameters.ElevationAngle = 70; % Nominal elevation angle (in degrees)
 simParameters.MobileSpeed = 30;    % Speed of mobile terminal (in m/s)
@@ -32,7 +32,7 @@ simParameters.MobileAltitude = 1.5; % Mobile antenna height above ground (in m)
 carrier.NSizeGrid = 11;          % Bandwidth in resource blocks (132 subcarriers)
 carrier.CyclicPrefix = 'Normal'; % 'Normal' or 'Extended'
 
-channel.DelayProfile = 'NTN-TDL-B';
+channel.DelayProfile = 'NTN-TDL-A'; % NLoS: A, B; LoS: C, D
 
 % ==========================================================
 
