@@ -38,17 +38,17 @@ SPEED_OF_LIGHT = 299792458.0
 
 # ========================== Simulation Variables ==========================
 
-# satellite_height = 600000.0  # LEO Orbit altitude (m) (600 km)
-# scenario = "dur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
-# carrier_frequency = 2.18e9     # DL carrier frequency (Hz)
-# SCS = 30e3
-# delay_spread_ns_custom = 100 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
-
 satellite_height = 600000.0  # LEO Orbit altitude (m) (600 km)
 scenario = "dur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
-carrier_frequency = 20e9     # DL carrier frequency (Hz)
-SCS = 120e3
+carrier_frequency = 2.18e9     # DL carrier frequency (Hz)
+SCS = 30e3
 delay_spread_ns_custom = 100 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
+
+# satellite_height = 600000.0  # LEO Orbit altitude (m) (600 km)
+# scenario = "dur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
+# carrier_frequency = 20e9     # DL carrier frequency (Hz)
+# SCS = 120e3
+# delay_spread_ns_custom = 100 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
 
 v_min, v_max = 20.0, 30.0        # UE ground speed in m/s
 
@@ -58,7 +58,7 @@ batch_size = 32 #32
 # Target Elevation Angle Configuration (e.g. 20, 30, 40, 50, 60, 70, 80, 90 deg, or None for peak 90 deg)
 target_elevation_angle = 70.0   # Desired nominal elevation angle in degrees (e.g. 50.0)
 
-SNR_dB = -5
+SNR_dB = -10
 
 # =========================================================================
 
@@ -818,7 +818,7 @@ md_content = f"""# Channel & Geometry Generation Settings - {scenario.upper()} (
 - **Active Subcarriers**: 132 (out of {nFFT})
 - **SNR (for LS estimation)**: {SNR_dB} dB
 - **Total OFDM Symbols**: 14
-- **Pilot Symbols (0-indexed)**: [2, 7, 11]
+- **Pilot Symbols (0-indexed)**: [2, 11]
 - **Total Samples Generated**: {N_samples}
 - **Target Delay Spread Configuration**: {ds_val_str}
 - **Average RMS Delay Spread (Realized)**: {avg_delay_spread_ns:.2f} ns (Range: [{min_delay_spread_ns:.2f}, {max_delay_spread_ns:.2f}] ns)
