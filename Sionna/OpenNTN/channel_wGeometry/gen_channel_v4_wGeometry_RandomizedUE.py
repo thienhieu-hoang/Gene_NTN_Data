@@ -43,6 +43,7 @@ scenario = "dur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
 carrier_frequency = 2.18e9     # DL carrier frequency (Hz)
 SCS = 30e3
 delay_spread_ns_custom = 100 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
+fix_delay_spread = True               # True to fix the delay spread value exactly; False to sample with standard variance
 
 # satellite_height = 600000.0  # LEO Orbit altitude (m) (600 km)
 # scenario = "dur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
@@ -335,6 +336,9 @@ if delay_spread_ns_custom is not None:
     target_log_mean_ds = np.log10(delay_spread_ns_custom * 1e-9)
     channel_model._scenario._params_los[f"muDS_{rounded_elev}"] = tf.constant(target_log_mean_ds, dtype=tf.float32)
     channel_model._scenario._params_nlos[f"muDS_{rounded_elev}"] = tf.constant(target_log_mean_ds, dtype=tf.float32)
+    if fix_delay_spread:
+        channel_model._scenario._params_los[f"sigmaDS_{rounded_elev}"] = tf.constant(0.0, dtype=tf.float32)
+        channel_model._scenario._params_nlos[f"sigmaDS_{rounded_elev}"] = tf.constant(0.0, dtype=tf.float32)
 
 ofdm_channel = GenerateOFDMChannel(channel_model, resource_grid=rg)
 remove_nulled = RemoveNulledSubcarriers(rg)
@@ -352,7 +356,8 @@ else:
     fc_str = f"{fc_ghz:.2f}".rstrip('0').rstrip('.').replace('.', 'p') + "G"
 
 if delay_spread_ns_custom is not None:
-    setting_dir = f"{scenario.upper()}{int(delay_spread_ns_custom)}ns_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
+    ds_suffix = f"{int(delay_spread_ns_custom)}ns_fixed" if fix_delay_spread else f"{int(delay_spread_ns_custom)}ns"
+    setting_dir = f"{scenario.upper()}{ds_suffix}_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
 else:
     setting_dir = f"{scenario.upper()}_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
 output_dir = os.path.join(script_dir, "results", setting_dir, f"{int(SNR_dB)}dB")
@@ -801,7 +806,10 @@ max_delay_spread_ns = np.max(delay_spreads_ns) if len(delay_spreads_ns) > 0 else
 
 md_filename = os.path.join(output_dir, f"readme_{scenario}_randomizedUE.md")
 
-ds_val_str = f"{delay_spread_ns_custom:.1f} ns (Custom Overridden)" if delay_spread_ns_custom is not None else "Standard 3GPP TR 38.811"
+if delay_spread_ns_custom is not None:
+    ds_val_str = f"{delay_spread_ns_custom:.1f} ns (Custom Overridden, Fixed)" if fix_delay_spread else f"{delay_spread_ns_custom:.1f} ns (Custom Overridden, Log-Normal)"
+else:
+    ds_val_str = "Standard 3GPP TR 38.811"
 
 target_elev_str = f"{target_elevation_angle:.1f}°" if target_elevation_angle is not None else "90.0° (Peak Zenith Overhead)"
 
