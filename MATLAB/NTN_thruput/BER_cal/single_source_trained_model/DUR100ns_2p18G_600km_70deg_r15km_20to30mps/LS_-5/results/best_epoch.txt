@@ -1,0 +1,4 @@
+best_epoch    = 183
+best_val_loss = 0.00066207
+snr           = -5
+input_type    = ls
