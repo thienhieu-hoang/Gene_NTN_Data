@@ -12,10 +12,9 @@
 - **SNR (for LS estimation)**: -10 dB
 - **Total OFDM Symbols**: 14
 - **Pilot Symbols (0-indexed)**: [2, 11]
-- **Pilot Density**: Sparse (88 pilots, subcarrier mod 6 = 0 or 1 on symbols 2 and 11)
 - **Total Samples Generated**: 1024
 - **Target Delay Spread Configuration**: 100.0 ns (Custom Overridden, Fixed)
-- **Average RMS Delay Spread (Realized)**: 81.20 ns (Range: [7.30, 327.42] ns)
+- **Average RMS Delay Spread (Realized)**: 80.80 ns (Range: [7.10, 327.95] ns)
 
 ## Satellite Orbital Pass & Elevation Angle Timeline
 - **Pass Start (t_start = -255.0 s)**: Elevation = 11.42° (Horizon Rise)
