@@ -54,8 +54,8 @@ fix_delay_spread = True               # True to fix the delay spread value exact
 v_min, v_max = 20.0, 30.0        # UE ground speed in m/s
 
 # Total samples to generate (N_samples)
-N_samples = 1024
-batch_size = 32 #32
+N_samples = 16 #1024
+batch_size = 8 #32 #32
 # Target Elevation Angle Configuration (e.g. 20, 30, 40, 50, 60, 70, 80, 90 deg, or None for peak 90 deg)
 target_elevation_angle = 70.0   # Desired nominal elevation angle in degrees (e.g. 50.0)
 
@@ -356,7 +356,7 @@ else:
     fc_str = f"{fc_ghz:.2f}".rstrip('0').rstrip('.').replace('.', 'p') + "G"
 
 if delay_spread_ns_custom is not None:
-    ds_suffix = f"{int(delay_spread_ns_custom)}ns_fixed" if fix_delay_spread else f"{int(delay_spread_ns_custom)}ns"
+    ds_suffix = f"{int(delay_spread_ns_custom)}nsFix" if fix_delay_spread else f"{int(delay_spread_ns_custom)}ns"
     setting_dir = f"{scenario.upper()}{ds_suffix}_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
 else:
     setting_dir = f"{scenario.upper()}_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
@@ -700,30 +700,35 @@ for b in range(num_batches):
             
         # Plot Channels (Transposed, viridis colormap, cropped)
         try:
-            real_full_t = np.real(H_extracted_ori[0]).T
-            real_comp_t = np.real(H_extracted_comp[0]).T
-            
-            fig0, ax0 = plt.subplots(figsize=(8, 5), facecolor='white')
-            im0 = ax0.imshow(real_full_t, aspect='auto', cmap='viridis', origin='lower')
-            ax0.set_title(f"Original Perfect Channel (Full Doppler): Real Part of Channel 0 ({scenario.upper()})\nElevation: {elevation_angles_all[0]:.2f}°")
-            ax0.set_xlabel("OFDM Symbol Index")
-            ax0.set_ylabel("Subcarrier Index")
-            fig0.colorbar(im0, ax=ax0)
-            plt.tight_layout()
-            channel_real_ori_filename = os.path.join(output_dir, f"channel_real_ori_{scenario}.pdf")
-            plt.savefig(channel_real_ori_filename, format='pdf', bbox_inches='tight', pad_inches=0.01)
-            plt.close(fig0)
-            
-            fig1, ax1 = plt.subplots(figsize=(8, 5), facecolor='white')
-            im1 = ax1.imshow(real_comp_t, aspect='auto', cmap='viridis', origin='lower')
-            ax1.set_title(f"Effective Compensated Channel (Precompensated Satellite Doppler): Real Part of Channel 0 ({scenario.upper()})\nElevation: {elevation_angles_all[0]:.2f}°")
-            ax1.set_xlabel("OFDM Symbol Index")
-            ax1.set_ylabel("Subcarrier Index")
-            fig1.colorbar(im1, ax=ax1)
-            plt.tight_layout()
-            channel_real_comp_filename = os.path.join(output_dir, f"channel_real_comp_{scenario}.pdf")
-            plt.savefig(channel_real_comp_filename, format='pdf', bbox_inches='tight', pad_inches=0.01)
-            plt.close(fig1)
+            for ch_idx in range(min(10, current_batch_size)):
+                real_full_t = np.real(H_extracted_ori[ch_idx]).T
+                real_comp_t = np.real(H_extracted_comp[ch_idx]).T
+                
+                fig0, ax0 = plt.subplots(figsize=(8, 5), facecolor='white')
+                im0 = ax0.imshow(real_full_t, aspect='auto', cmap='viridis', origin='lower')
+                ax0.set_title(f"Original Perfect Channel (Full Doppler): Real Part of Channel {ch_idx} ({scenario.upper()})\nElevation: {elevation_angles_all[ch_idx]:.2f}°")
+                ax0.set_xlabel("OFDM Symbol Index")
+                ax0.set_ylabel("Subcarrier Index")
+                fig0.colorbar(im0, ax=ax0)
+                plt.tight_layout()
+                channel_real_ori_filename = os.path.join(output_dir, f"channel_real_ori_{scenario}_ch{ch_idx}.pdf")
+                plt.savefig(channel_real_ori_filename, format='pdf', bbox_inches='tight', pad_inches=0.01)
+                if ch_idx == 0:
+                    plt.savefig(os.path.join(output_dir, f"channel_real_ori_{scenario}.pdf"), format='pdf', bbox_inches='tight', pad_inches=0.01)
+                plt.close(fig0)
+                
+                fig1, ax1 = plt.subplots(figsize=(8, 5), facecolor='white')
+                im1 = ax1.imshow(real_comp_t, aspect='auto', cmap='viridis', origin='lower')
+                ax1.set_title(f"Effective Compensated Channel (Precompensated Satellite Doppler): Real Part of Channel {ch_idx} ({scenario.upper()})\nElevation: {elevation_angles_all[ch_idx]:.2f}°")
+                ax1.set_xlabel("OFDM Symbol Index")
+                ax1.set_ylabel("Subcarrier Index")
+                fig1.colorbar(im1, ax=ax1)
+                plt.tight_layout()
+                channel_real_comp_filename = os.path.join(output_dir, f"channel_real_comp_{scenario}_ch{ch_idx}.pdf")
+                plt.savefig(channel_real_comp_filename, format='pdf', bbox_inches='tight', pad_inches=0.01)
+                if ch_idx == 0:
+                    plt.savefig(os.path.join(output_dir, f"channel_real_comp_{scenario}.pdf"), format='pdf', bbox_inches='tight', pad_inches=0.01)
+                plt.close(fig1)
         except Exception as ex:
             print(f"Warning: Could not save channel plots. Error: {ex}")
 
