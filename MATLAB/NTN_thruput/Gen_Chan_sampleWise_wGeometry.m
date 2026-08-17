@@ -11,7 +11,7 @@ carrier = nrCarrierConfig;
 channel = nrTDLChannel; % small-scale coefficient of the channel
 
 % ========================================================
-SNRdB = -5;
+SNRdB = 15;
 numUE = 1024;
 r_beam = 15000.0;    % 15 km beam footprint radius
 r_ue_max = 14500.0;  % 14.5 km max UE offset inside beam
@@ -23,7 +23,7 @@ r_ue_max = 14500.0;  % 14.5 km max UE offset inside beam
 simParameters.CarrierFrequency = 2.18e9; % S band                      % Carrier frequency (in Hz)
 simParameters.SatelliteAltitude = 600000; % 600 km altitude
 carrier.SubcarrierSpacing = 30;  % 15, 30, 60, 120, 240 (kHz)
-channel.DelaySpread = 200e-9;
+channel.DelaySpread = 100e-9;
 
 simParameters.ElevationAngle = 70; % Nominal elevation angle (in degrees)
 simParameters.MobileSpeed = 30;    % Speed of mobile terminal (in m/s)
@@ -252,7 +252,7 @@ for snr_idx = 1:length(SNRdB)
             reset(channel);
         elseif channel.RandomStream == "mt19937ar with seed"
             release(channel);
-            channel.Seed = idxUE;
+            channel.Seed = idxUE + (SNRdB +20)*numUE;
         end
         
         [rxWaveform2, pathGains] = channel(txWaveform2);
@@ -391,7 +391,7 @@ for snr_idx = 1:length(SNRdB)
         'H_perfect_ori', H_perfect_ori(:,:,1).', ...
         'H_perfect',     H_perfect(:,:,1).', ...
         'H_prac',        H_prac(:,:,1).', ...
-        'H_li',          H_li(:,:,1), ...
+        'H_li',          H_li(:,:,1).', ...
         'H_ls',          H_ls_grid_1 ...
     );
     
