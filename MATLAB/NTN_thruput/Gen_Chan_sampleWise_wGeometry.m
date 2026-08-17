@@ -119,8 +119,6 @@ u_los_bc = v_los_bc / slant_range_bc;
 satelliteDopplerShift_bc = dot(v_sat_ECEF, u_los_bc) / lambda;
 
 %% 3. Generate Randomized UE Positions Inside Beam Footprint
-
-rng(42); % Reproducible position generation
 ut_loc_ENU_all     = zeros(3, numUE);
 r_ue_ECEF_all      = zeros(3, numUE);
 slant_ranges       = zeros(1, numUE);

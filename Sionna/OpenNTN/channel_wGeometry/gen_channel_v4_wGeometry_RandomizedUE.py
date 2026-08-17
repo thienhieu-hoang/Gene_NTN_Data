@@ -60,7 +60,7 @@ batch_size = 32 #32
 # Target Elevation Angle Configuration (e.g. 20, 30, 40, 50, 60, 70, 80, 90 deg, or None for peak 90 deg)
 target_elevation_angle = 70.0   # Desired nominal elevation angle in degrees (e.g. 50.0)
 
-SNR_dB = -5
+SNR_dB = 15
 
 # =========================================================================
 

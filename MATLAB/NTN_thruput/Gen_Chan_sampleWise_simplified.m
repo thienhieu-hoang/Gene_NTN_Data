@@ -8,9 +8,9 @@ channel = nrTDLChannel; % small-scale coefficient of the channel
 SNRdB = 0; %[0 10]; %-15:5:10;
 numUE = 8; %512;
 
-simParameters.CarrierFrequency = 20e9; % Ka band                  % Carrier frequency (in Hz)
-simParameters.SatelliteAltitude = 1000000;
-carrier.SubcarrierSpacing = 120;  % 15, 30, 60, 120, 240 (kHz)
+simParameters.CarrierFrequency = 2.18e9; % Ka band                  % Carrier frequency (in Hz)
+simParameters.SatelliteAltitude = 600000;
+carrier.SubcarrierSpacing = 30;  % 15, 30, 60, 120, 240 (kHz)
 channel.DelaySpread = 100e-9;
 channel.DelayProfile = 'NTN-TDL-A'; % NLoS: -A, -B
 % simParameters.CarrierFrequency = 2.18e9; % S band                  % Carrier frequency (in Hz)

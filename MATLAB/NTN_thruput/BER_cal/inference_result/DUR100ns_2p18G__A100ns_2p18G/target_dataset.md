@@ -14,7 +14,7 @@
 ## Beam & UE Footprint Settings
 - **Beam Radius:** 15.0 km
 - **Max UE Offset Radius:** 14.5 km
-- **Number of UEs ($N_{\text{UE}}$):** 100
+- **Number of UEs ($N_{\text{UE}}$):** 512
 
 ## OFDM Carrier Configuration
 - **Resource Blocks ($N_{\text{grid}}$):** 11 RBs (132 Subcarriers)

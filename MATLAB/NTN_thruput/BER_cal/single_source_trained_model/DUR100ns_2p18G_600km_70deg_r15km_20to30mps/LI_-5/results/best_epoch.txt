@@ -1,4 +1,0 @@
-best_epoch    = 197
-best_val_loss = 0.00059877
-snr           = -5
-input_type    = li
