@@ -9,6 +9,7 @@ D30_B100_300_JMMD/
 !training_history.mat
 !final_net.mat
 !best_net.mat
+!synthesized*.mat
 
 # Auto-generated MATLAB ONNX package folders
 +*/
