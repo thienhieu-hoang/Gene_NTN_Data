@@ -271,7 +271,7 @@ for snr_idx = 1:length(SNRdB)
         
         % Add Noise
         SNR = 10^(SNRdB(snr_idx) / 10);
-        sigPower = mean(abs(rxGrid_pilot(:)).^2, 'all');
+        sigPower = mean(abs(rxGrid_pilot(refDMRSIndices)).^2);
         noisePower = sigPower / SNR;
         noise = sqrt(noisePower / 2) * (randn(size(rxGrid_pilot)) + 1j * randn(size(rxGrid_pilot)));
         rxGrid_pilot_noisy = rxGrid_pilot + noise;

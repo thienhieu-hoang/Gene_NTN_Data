@@ -11,8 +11,8 @@
 - **Beam Footprint Radius:** 15.00 km
 - **Max UE Radius:** 14.50 km
 - **Beam Center Reference Location:** Lat 37.7749°, Lon -122.4194°
-- **Elevation Angle Range:** Min 68.21°, Max 70.85°, Mean 69.52°
-- **Slant Range Range:** Min 640.16 km, Max 650.09 km
+- **Elevation Angle Range:** Min 68.21°, Max 70.84°, Mean 69.52°
+- **Slant Range Range:** Min 640.19 km, Max 650.11 km
 - **Path Loss Range:** Min 155.34 dB, Max 155.48 dB
 
 ## Mobile Terminal (UE) Parameters
