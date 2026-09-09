@@ -45,6 +45,10 @@ SCS = 30e3
 delay_spread_ns_custom = 100 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
 fix_delay_spread = True               # True to fix the delay spread value exactly; False to sample with standard variance
 dense_pilot = False                   # False (default) to use sparse pilots (88 pilots); True for dense pilots (264 pilots)
+pilot_position_setting = 1            # For sparse pilots (dense_pilot=False):
+                                      # 1: subcarrier mod 6 in {0, 1}
+                                      # 2: subcarrier mod 6 in {2, 3}
+                                      # 3: subcarrier mod 6 in {4, 5}
 
 # satellite_height = 600000.0  # LEO Orbit altitude (m) (600 km)
 # scenario = "dur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
@@ -261,9 +265,15 @@ frequencies = subcarrier_frequencies(rg.fft_size, rg.subcarrier_spacing)
 pilot_mask = tf.squeeze(rg.pilot_pattern.mask).numpy().astype(bool)
 
 if not dense_pilot:
-    # Extract only elements where subcarrier index mod 6 == 0 or mod 6 == 1, others are set to False
     subcarrier_indices = np.arange(132)
-    sparse_subc_mask = (subcarrier_indices % 6 == 0) | (subcarrier_indices % 6 == 1)
+    if pilot_position_setting == 1:
+        sparse_subc_mask = (subcarrier_indices % 6 == 0) | (subcarrier_indices % 6 == 1)
+    elif pilot_position_setting == 2:
+        sparse_subc_mask = (subcarrier_indices % 6 == 2) | (subcarrier_indices % 6 == 3)
+    elif pilot_position_setting == 3:
+        sparse_subc_mask = (subcarrier_indices % 6 == 4) | (subcarrier_indices % 6 == 5)
+    else:
+        raise ValueError(f"Invalid pilot_position_setting: {pilot_position_setting}. Must be 1, 2, or 3.")
     for sym_idx in [2, 11]:
         pilot_mask[sym_idx] = pilot_mask[sym_idx] & sparse_subc_mask
 
@@ -364,7 +374,12 @@ if fc_ghz == int(fc_ghz):
 else:
     fc_str = f"{fc_ghz:.2f}".rstrip('0').rstrip('.').replace('.', 'p') + "G"
 
-pilot_suffix = "_dense" if dense_pilot else ""
+if dense_pilot:
+    pilot_suffix = "_dense"
+elif pilot_position_setting != 1:
+    pilot_suffix = f"_pos{pilot_position_setting}"
+else:
+    pilot_suffix = ""
 if delay_spread_ns_custom is not None:
     ds_suffix = f"{int(delay_spread_ns_custom)}nsFix" if fix_delay_spread else f"{int(delay_spread_ns_custom)}ns"
     setting_dir = f"{scenario.upper()}{ds_suffix}{pilot_suffix}_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
@@ -799,6 +814,7 @@ mat_data = {
     # Metadata and other parameters
     "pilot_symbols": pilot_symbols + 1,       
     "pilot_subcarriers": pilot_subcarriers + 1, 
+    "pilot_position_setting": pilot_position_setting if not dense_pilot else 0,
     "ut_loc_ENU": ut_loc_ENU_all,       
     "ut_velocity_ENU": ut_velocity_ENU_all, 
     "bs_loc_ENU": bs_loc_ENU,
@@ -823,6 +839,12 @@ else:
 
 target_elev_str = f"{target_elevation_angle:.1f}°" if target_elevation_angle is not None else "90.0° (Peak Zenith Overhead)"
 
+if dense_pilot:
+    pilot_desc_str = "Dense (264 pilots)"
+else:
+    mod_dict = {1: "0 or 1", 2: "2 or 3", 3: "4 or 5"}
+    pilot_desc_str = f"Sparse (88 pilots, position setting {pilot_position_setting}: subcarrier mod 6 = {mod_dict.get(pilot_position_setting, '')} on symbols 2 and 11)"
+
 md_content = f"""# Channel & Geometry Generation Settings - {scenario.upper()} (Randomized UE)
 
 - **Scenario Type**: {scenario.upper()} (dur = Dense Urban, sur = SubUrban, urb = Urban)
@@ -837,7 +859,7 @@ md_content = f"""# Channel & Geometry Generation Settings - {scenario.upper()} (
 - **SNR (for LS estimation)**: {SNR_dB} dB
 - **Total OFDM Symbols**: 14
 - **Pilot Symbols (0-indexed)**: [2, 11]
-- **Pilot Density**: {"Dense (264 pilots)" if dense_pilot else "Sparse (88 pilots, subcarrier mod 6 = 0 or 1 on symbols 2 and 11)"}
+- **Pilot Density**: {pilot_desc_str}
 - **Total Samples Generated**: {N_samples}
 - **Target Delay Spread Configuration**: {ds_val_str}
 - **Average RMS Delay Spread (Realized)**: {avg_delay_spread_ns:.2f} ns (Range: [{min_delay_spread_ns:.2f}, {max_delay_spread_ns:.2f}] ns)
