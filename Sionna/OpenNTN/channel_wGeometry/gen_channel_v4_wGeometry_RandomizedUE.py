@@ -45,10 +45,20 @@ SCS = 30e3
 delay_spread_ns_custom = 100 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
 fix_delay_spread = True               # True to fix the delay spread value exactly; False to sample with standard variance
 dense_pilot = False                   # False (default) to use sparse pilots (88 pilots); True for dense pilots (264 pilots)
-pilot_position_setting = 1            # For sparse pilots (dense_pilot=False):
+pilot_position_setting = 2            # For sparse pilots (dense_pilot=False):
                                       # 1: subcarrier mod 6 in {0, 1}
                                       # 2: subcarrier mod 6 in {2, 3}
                                       # 3: subcarrier mod 6 in {4, 5}
+                                      # saved as port1, port2, port3
+typeAposition = 3   # 2: [2, 11] 
+                    # 3: [3, 11] - saved as Apos2, Apos3
+
+if typeAposition == 2:
+    pilot_ofdm_symbol_indices = [2, 11]
+elif typeAposition == 3:
+    pilot_ofdm_symbol_indices = [3, 11]
+else:
+    raise ValueError(f"Invalid typeAposition: {typeAposition}. Must be 2 or 3.")
 
 # satellite_height = 600000.0  # LEO Orbit altitude (m) (600 km)
 # scenario = "dur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
@@ -59,7 +69,7 @@ pilot_position_setting = 1            # For sparse pilots (dense_pilot=False):
 v_min, v_max = 20.0, 30.0        # UE ground speed in m/s
 
 # Total samples to generate (N_samples)
-N_samples = 1024
+N_samples = 2048
 batch_size = 32 #32
 # Target Elevation Angle Configuration (e.g. 20, 30, 40, 50, 60, 70, 80, 90 deg, or None for peak 90 deg)
 target_elevation_angle = 70.0   # Desired nominal elevation angle in degrees (e.g. 50.0)
@@ -259,7 +269,7 @@ rg = ResourceGrid(num_ofdm_symbols=14,
                     num_guard_carriers=(62, 62),
                     dc_null=False, 
                     pilot_pattern="kronecker",
-                    pilot_ofdm_symbol_indices=[2, 11])
+                    pilot_ofdm_symbol_indices=pilot_ofdm_symbol_indices)
 
 frequencies = subcarrier_frequencies(rg.fft_size, rg.subcarrier_spacing)
 pilot_mask = tf.squeeze(rg.pilot_pattern.mask).numpy().astype(bool)
@@ -274,7 +284,7 @@ if not dense_pilot:
         sparse_subc_mask = (subcarrier_indices % 6 == 4) | (subcarrier_indices % 6 == 5)
     else:
         raise ValueError(f"Invalid pilot_position_setting: {pilot_position_setting}. Must be 1, 2, or 3.")
-    for sym_idx in [2, 11]:
+    for sym_idx in pilot_ofdm_symbol_indices:
         pilot_mask[sym_idx] = pilot_mask[sym_idx] & sparse_subc_mask
 
 pilot_symbols, pilot_subcarriers = np.where(pilot_mask)
@@ -375,11 +385,9 @@ else:
     fc_str = f"{fc_ghz:.2f}".rstrip('0').rstrip('.').replace('.', 'p') + "G"
 
 if dense_pilot:
-    pilot_suffix = "_dense"
-elif pilot_position_setting != 1:
-    pilot_suffix = f"_pos{pilot_position_setting}"
+    pilot_suffix = f"_dense_Apos{typeAposition}"
 else:
-    pilot_suffix = ""
+    pilot_suffix = f"_port{pilot_position_setting}_Apos{typeAposition}"
 if delay_spread_ns_custom is not None:
     ds_suffix = f"{int(delay_spread_ns_custom)}nsFix" if fix_delay_spread else f"{int(delay_spread_ns_custom)}ns"
     setting_dir = f"{scenario.upper()}{ds_suffix}{pilot_suffix}_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
@@ -815,6 +823,8 @@ mat_data = {
     "pilot_symbols": pilot_symbols + 1,       
     "pilot_subcarriers": pilot_subcarriers + 1, 
     "pilot_position_setting": pilot_position_setting if not dense_pilot else 0,
+    "typeAposition": typeAposition,
+    "pilot_ofdm_symbol_indices": np.array(pilot_ofdm_symbol_indices),
     "ut_loc_ENU": ut_loc_ENU_all,       
     "ut_velocity_ENU": ut_velocity_ENU_all, 
     "bs_loc_ENU": bs_loc_ENU,
@@ -840,10 +850,10 @@ else:
 target_elev_str = f"{target_elevation_angle:.1f}°" if target_elevation_angle is not None else "90.0° (Peak Zenith Overhead)"
 
 if dense_pilot:
-    pilot_desc_str = "Dense (264 pilots)"
+    pilot_desc_str = f"Dense (264 pilots on symbols {pilot_ofdm_symbol_indices})"
 else:
     mod_dict = {1: "0 or 1", 2: "2 or 3", 3: "4 or 5"}
-    pilot_desc_str = f"Sparse (88 pilots, position setting {pilot_position_setting}: subcarrier mod 6 = {mod_dict.get(pilot_position_setting, '')} on symbols 2 and 11)"
+    pilot_desc_str = f"Sparse (88 pilots, port {pilot_position_setting}: subcarrier mod 6 = {mod_dict.get(pilot_position_setting, '')} on symbols {pilot_ofdm_symbol_indices[0]} and {pilot_ofdm_symbol_indices[1]})"
 
 md_content = f"""# Channel & Geometry Generation Settings - {scenario.upper()} (Randomized UE)
 
@@ -858,7 +868,7 @@ md_content = f"""# Channel & Geometry Generation Settings - {scenario.upper()} (
 - **Active Subcarriers**: 132 (out of {nFFT})
 - **SNR (for LS estimation)**: {SNR_dB} dB
 - **Total OFDM Symbols**: 14
-- **Pilot Symbols (0-indexed)**: [2, 11]
+- **Pilot Symbols (0-indexed)**: {pilot_ofdm_symbol_indices} (typeAposition={typeAposition})
 - **Pilot Density**: {pilot_desc_str}
 - **Total Samples Generated**: {N_samples}
 - **Target Delay Spread Configuration**: {ds_val_str}
