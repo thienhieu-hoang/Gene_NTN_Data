@@ -40,18 +40,33 @@ SPEED_OF_LIGHT = 299792458.0
 
 satellite_height = 600000.0  # LEO Orbit altitude (m) (600 km)
 scenario = "dur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
+LoS = False                  # True: only LoS | False: only NLoS | None (or ""): 3GPP probabilistic (mixed)
 carrier_frequency = 2.18e9     # DL carrier frequency (Hz)
 SCS = 30e3
-delay_spread_ns_custom = 100 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
+delay_spread_ns_custom = 300 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
 fix_delay_spread = True               # True to fix the delay spread value exactly; False to sample with standard variance
 dense_pilot = False                   # False (default) to use sparse pilots (88 pilots); True for dense pilots (264 pilots)
-pilot_position_setting = 2            # For sparse pilots (dense_pilot=False):
+pilot_position_setting = 1            # For sparse pilots (dense_pilot=False):
                                       # 1: subcarrier mod 6 in {0, 1}
                                       # 2: subcarrier mod 6 in {2, 3}
                                       # 3: subcarrier mod 6 in {4, 5}
                                       # saved as port1, port2, port3
-typeAposition = 3   # 2: [2, 11] 
+typeAposition = 2   # 2: [2, 11] 
                     # 3: [3, 11] - saved as Apos2, Apos3
+
+# Resolve LoS flag and directory tag
+if LoS is True:
+    los_setting = True
+    los_suffix = "_LoS"
+    los_desc_str = "Only LoS (Line-of-Sight, Rician Fading)"
+elif LoS is False:
+    los_setting = False
+    los_suffix = "_NLoS"
+    los_desc_str = "Only NLoS (Non-Line-of-Sight, Rayleigh Fading)"
+else:
+    los_setting = None
+    los_suffix = ""
+    los_desc_str = "3GPP Probabilistic (Mixed LoS/NLoS per Table 6.6.1-1)"
 
 if typeAposition == 2:
     pilot_ofdm_symbol_indices = [2, 11]
@@ -72,7 +87,7 @@ v_min, v_max = 20.0, 30.0        # UE ground speed in m/s
 N_samples = 2048
 batch_size = 32 #32
 # Target Elevation Angle Configuration (e.g. 20, 30, 40, 50, 60, 70, 80, 90 deg, or None for peak 90 deg)
-target_elevation_angle = 70.0   # Desired nominal elevation angle in degrees (e.g. 50.0)
+target_elevation_angle = 30.0   # Desired nominal elevation angle in degrees (e.g. 50.0)
 
 SNR_dB = 15
 
@@ -358,6 +373,7 @@ channel_model = channel_class(carrier_frequency=carrier_frequency,
 # Override clusters based on elevation angle (rounded to nearest 10 degrees)
 rounded_elev = int(round(elevation_angle_nom / 10.0) * 10)
 rounded_elev = max(10, min(90, rounded_elev))
+channel_model._scenario._params_los[f"numClusters_{rounded_elev}"] = 3
 channel_model._scenario._params_nlos[f"numClusters_{rounded_elev}"] = 3
 
 # Apply custom delay spread if configured
@@ -390,9 +406,9 @@ else:
     pilot_suffix = f"_port{pilot_position_setting}_Apos{typeAposition}"
 if delay_spread_ns_custom is not None:
     ds_suffix = f"{int(delay_spread_ns_custom)}nsFix" if fix_delay_spread else f"{int(delay_spread_ns_custom)}ns"
-    setting_dir = f"{scenario.upper()}{ds_suffix}{pilot_suffix}_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
+    setting_dir = f"{scenario.upper()}{ds_suffix}{los_suffix}{pilot_suffix}_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
 else:
-    setting_dir = f"{scenario.upper()}{pilot_suffix}_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
+    setting_dir = f"{scenario.upper()}{los_suffix}{pilot_suffix}_{fc_str}_{int(satellite_height/1000)}km{elev_tag}_r{int(r_beam/1000)}km_{int(v_min)}to{int(v_max)}mps"
 output_dir = os.path.join(script_dir, "results", setting_dir, f"{int(SNR_dB)}dB")
 os.makedirs(output_dir, exist_ok=True)
 
@@ -445,8 +461,10 @@ for b in range(num_batches):
     in_state = tf.constant(np.zeros((current_batch_size, 1), dtype=bool), dtype=tf.bool)
     
     # 2. Update Channel Model Topology
+    channel_model._scenario._requested_los = los_setting
     channel_model.set_topology(ut_loc_tensor, bs_loc_tensor, ut_orientations, bs_orientations,
-                               ut_velocities_tensor, bs_velocities_tensor, in_state, los=True)
+                               ut_velocities_tensor, bs_velocities_tensor, in_state, los=los_setting)
+    current_batch_los = channel_model._scenario.los
     
     # Set the beam center to the local ENU origin (shape [current_batch_size, 3])
     channel_model._scenario.set_beam_center(tf.zeros([current_batch_size, 3], dtype=tf.float32))
@@ -478,8 +496,11 @@ for b in range(num_batches):
     
     # ------------------ Part 2: Precompensated Channel ------------------
     # Precompensate satellite Doppler by setting satellite velocity to zero
+    channel_model._scenario._requested_los = los_setting
     channel_model.set_topology(ut_loc_tensor, bs_loc_tensor, ut_orientations, bs_orientations,
-                               ut_velocities_tensor, tf.zeros_like(bs_velocities_tensor), in_state, los=True)
+                               ut_velocities_tensor, tf.zeros_like(bs_velocities_tensor), in_state, los=los_setting)
+    if los_setting is None:
+        channel_model._scenario._los = current_batch_los
     channel_model._scenario._doppler_mode = 'precompensated'
     tf.random.set_seed(iteration_seed)
     path_coefficients_comp, path_delays_comp = channel_model(num_time_steps, sampling_frequency)
@@ -858,6 +879,7 @@ else:
 md_content = f"""# Channel & Geometry Generation Settings - {scenario.upper()} (Randomized UE)
 
 - **Scenario Type**: {scenario.upper()} (dur = Dense Urban, sur = SubUrban, urb = Urban)
+- **Propagation Condition**: {los_desc_str}
 - **Carrier Frequency**: {carrier_frequency / 1e9:.2f} GHz
 - **Link Direction**: {direction}
 - **Satellite (LEO) Height**: {satellite_height / 1000:.0f} km

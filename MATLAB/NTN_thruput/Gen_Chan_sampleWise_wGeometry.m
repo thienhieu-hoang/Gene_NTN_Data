@@ -228,7 +228,7 @@ alt_str = [num2str(simParameters.SatelliteAltitude / 1000), 'km'];
 elev_str = [strrep(num2str(simParameters.ElevationAngle), '.', 'p'), 'deg'];
 scs_str = [num2str(carrier.SubcarrierSpacing), 'kHz'];
 
-base_folder = sprintf('sampleWiseDoppler_wGeometry_%s%s_%se9_%s_%s_%s', ...
+base_folder = sprintf('generatedChannel_Results/%s%s_%se9_%s_%s_%s', ...
     profile_str, ds_str, fc_str, alt_str, elev_str, scs_str);
 
 H_prac = zeros(14, carrier.NSizeGrid*12, numUE);
