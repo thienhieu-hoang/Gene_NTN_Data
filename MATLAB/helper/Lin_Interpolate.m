@@ -38,7 +38,7 @@ function varargout = Lin_Interpolate(Y_noise, pilot_Indices, pilot_Symbols)
         end
     elseif numel(dmrsSymbol)>1
         % Perform linear interpolation
-        dmrsEsts = double(dmrsEsts);
+        dmrsEsts = double(dmrsEsts(:));
         [l_hest,k_hest] = meshgrid(1:size(H_linear,2),1:size(H_linear,1));
         f = scatteredInterpolant(dmrsSubs(:,2),dmrsSubs(:,1),dmrsEsts);
         H_linear = f(l_hest,k_hest);
