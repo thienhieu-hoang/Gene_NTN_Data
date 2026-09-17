@@ -72,8 +72,8 @@ caxis([0 2]);
 axis xy;
 
 % Grid formatting & labels
-xlabel('OFDM Symbol Index (Time \rightarrow)', 'FontSize', 12, 'FontWeight', 'bold');
-ylabel('Subcarrier Index (Frequency \uparrow)', 'FontSize', 12, 'FontWeight', 'bold');
+xlabel('OFDM Symbol Index (Time)', 'FontSize', 12, 'FontWeight', 'bold');
+ylabel('Subcarrier Index (Frequency)', 'FontSize', 12, 'FontWeight', 'bold');
 title(sprintf('PDSCH Grid: Mapping Type %s | DM-RS Config Type %d | AdditionalPos = %d | TypeAPos = %d', ...
     pdsch.MappingType, pdsch.DMRS.DMRSConfigurationType, pdsch.DMRS.DMRSAdditionalPosition, pdsch.DMRS.DMRSTypeAPosition), ...
     'FontSize', 13, 'FontWeight', 'bold');

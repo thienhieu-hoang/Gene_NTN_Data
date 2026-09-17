@@ -1,6 +1,6 @@
 %{
 ========================================================================================
-             Target Domain Effective Channel Generator & Visualizer
+             Effective Channel Generator & Visualizer
 ========================================================================================
 OVERVIEW:
   This script generates and visualizes effective 2D Doppler-compensated OFDM 
