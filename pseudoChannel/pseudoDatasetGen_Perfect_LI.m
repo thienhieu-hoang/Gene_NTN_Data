@@ -44,9 +44,8 @@
 SourceDatasetPath = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\MATLAB\NTN_thruput\generatedChannel_Results\A100_2p18e9_600km_70deg_30kHz";
 TargetDatasetPath = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\Sionna\OpenNTN\channel_wGeometry\results\DUR300nsFix_NLoS_port1_Apos2_2p18G_600km_30deg_r15km_20to30mps";
 
-% Output directory
-outputFolder = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\pseudoChannel\A100Perfect__DUR300LI";
-outpuFolder  = outputFolder; % backward compatibility alias
+% Base output directory
+baseOutputFolder = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\pseudoChannel\A100Perfect__DUR300LI";
 
 SNR_dB = -10:5:15;
 w_window = [3, 5];
@@ -66,6 +65,15 @@ rng_seed = 42;
 %              then descales with target [min, max] range.
 %   "none"   - Direct unscaled FDA mixing.
 preprocessing_scale = "rms";
+
+% Output directory with preprocessing suffix
+if isempty(preprocessing_scale) || strcmpi(preprocessing_scale, "none")
+    outputFolder = baseOutputFolder;
+else
+    scale_tag = lower(strrep(preprocessing_scale, "-", ""));
+    outputFolder = baseOutputFolder + "_" + scale_tag;
+end
+outpuFolder  = outputFolder; % backward compatibility alias
 
 if exist('mfilename', 'builtin') && ~isempty(mfilename('fullpath'))
     script_dir = fileparts(mfilename('fullpath'));

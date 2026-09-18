@@ -44,9 +44,8 @@
 SourceDatasetPath = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\MATLAB\NTN_thruput\generatedChannel_Results\A100_2p18e9_600km_70deg_30kHz";
 TargetDatasetPath = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\pseudoChannel\inferred_dataset\A100_70deg__DUR300_30deg_2p18e9_600kmm_30kHz\LS_Attention_standardize";
 
-% Output directory
-outputFolder = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\pseudoChannel\A100Perfect__DUR300LSAttention";
-outpuFolder  = outputFolder; % backward compatibility alias
+% Base output directory
+baseOutputFolder = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\pseudoChannel\A100Perfect__DUR300LSAttention";
 
 SNR_dB = -10:5:15;
 w_window = [3, 5];
@@ -66,6 +65,15 @@ rng_seed = 42;
 %              then descales with target [min, max] range.
 %   "none"   - Direct unscaled FDA mixing.
 preprocessing_scale = "rms";
+
+% Output directory with preprocessing suffix
+if isempty(preprocessing_scale) || strcmpi(preprocessing_scale, "none")
+    outputFolder = baseOutputFolder;
+else
+    scale_tag = lower(strrep(preprocessing_scale, "-", ""));
+    outputFolder = baseOutputFolder + "_" + scale_tag;
+end
+outpuFolder  = outputFolder; % backward compatibility alias
 
 % Whether to clamp boundaries of target inferred channel (typically false for model inferences)
 apply_crop_target = false;
