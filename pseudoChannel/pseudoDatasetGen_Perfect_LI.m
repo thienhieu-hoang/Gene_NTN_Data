@@ -2,8 +2,9 @@
 % =========================================================================
 % WORKFLOW & PURPOSE:
 % 1. Pseudo Ground Truth Generation (FDA):
-%    - Translates target domain style (Delay-Doppler low-frequency components)
-%      into clean source domain channels using Delay-Doppler Fourier Domain
+%    - Fourier transfer is the result of translation of Perfect (source) -> LI (target).
+%    - Translates target domain style (Delay-Doppler low-frequency components of target LI)
+%      into clean source domain channels (source Perfect) using Delay-Doppler Fourier Domain
 %      Adaptation (FDA) with window size (w_h = 13 x w_w in [3, 5]).
 %    - Produces the pseudo ground-truth channel grid: H_perfect (14 x 132 x N).
 %
@@ -34,7 +35,7 @@ SourceDatasetPath = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN
 TargetDatasetPath = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\Sionna\OpenNTN\channel_wGeometry\results\DUR300nsFix_NLoS_port1_Apos2_2p18G_600km_30deg_r15km_20to30mps";
 
 % Output directory
-outputFolder = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\pseudoChannel\A100__DUR300";
+outputFolder = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\pseudoChannel\A100Perfect__DUR300LI";
 outpuFolder  = outputFolder; % backward compatibility alias
 
 SNR_dB = -10:5:15;
@@ -120,20 +121,26 @@ if fid ~= -1
     fprintf(fid, '# Pseudo Dataset Overview: FDA Domain Adaptation\n\n');
     fprintf(fid, '## General Information\n\n');
     fprintf(fid, '- **Method:** Delay-Doppler Fourier Domain Adaptation (FDA) + 5G NR DM-RS Pilot & Noise Realization\n');
+    fprintf(fid, '- **Fourier Transfer (FDA):** Translation of **Perfect (source) -> LI (target)** (`src_H_perf` -> `tgt_H_li`)\n');
     fprintf(fid, '- **Source Dataset Path:** `%s`\n', SourceDatasetPath);
     fprintf(fid, '- **Target Dataset Path:** `%s`\n', TargetDatasetPath);
     fprintf(fid, '- **Result Folder:** `%s`\n', outputFolder);
     fprintf(fid, '- **Generation Date:** %s\n\n', string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss')));
+    fprintf(fid, '> **Note on Fourier Transfer:**\n');
+    fprintf(fid, '> The Fourier transfer is the result of translation of **Perfect (source) -> LI (target)** (`src_H_perf` -> `tgt_H_li`).\n');
+    fprintf(fid, '> Low-frequency Delay-Doppler components from the target domain linear interpolated channel (`tgt_H_li`, pre-processed with extrapolation clipping) are transferred onto the clean source ground-truth channel (`src_H_perf`) to generate the pseudo ground-truth channel (`H_perfect`).\n\n');
     fprintf(fid, '---\n\n');
     fprintf(fid, '## Configuration Summary\n\n');
     fprintf(fid, '| Parameter | Value |\n');
     fprintf(fid, '| :--- | :--- |\n');
+    fprintf(fid, '| **Fourier Transfer (FDA)** | **Perfect (source)** $\\rightarrow$ **LI (target)** (`src_H_perf` $\\rightarrow$ `tgt_H_li`) |\n');
     fprintf(fid, '| **Source Domain** | NTN TDL-A (NLOS, 70° elevation, 100 ns delay spread, 30 kHz SCS) |\n');
     fprintf(fid, '| **Target Domain** | OpenNTN DUR NLOS (30° elevation, 300 ns delay spread, 30 kHz SCS) |\n');
     fprintf(fid, '| **FDA Window ($13 \\times w_w$)** | %s |\n', mat2str(w_window));
     fprintf(fid, '| **SNR Range** | %s dB |\n', mat2str(SNR_dB));
     fprintf(fid, '| **Grid Dimensions** | 132 Subcarriers × 14 OFDM Symbols (11 RBs) |\n');
     fprintf(fid, '| **Pilot Configuration** | DM-RS Type 2 Port 1 (%d pilots per slot: symbols 3, 12; subcarriers 1-128) |\n', numPilots);
+    fprintf(fid, '| **Pre-processing** | Target LI extrapolated elements clipped to inner pilot region min/max prior to FDA |\n');
     fprintf(fid, '| **Saved Variables** | `H_perfect`, `H_li`, `H_ls_pilots`, `pilot_rows`, `pilot_cols`, `pilot_indices`, `nmse_li`, `nmse_ls_pilot`, `ssim_li`, `ssim_li_pilot`, `ssim_ls` |\n\n');
     fprintf(fid, '## Linked Reference Notes\n\n');
     fprintf(fid, '- [Source Dataset Note](note_source.md)\n');
@@ -158,6 +165,14 @@ for w_w = w_window
         nSamples = min(size(source_domain.H_perfect, 3), size(target_domain.H_li, 3));
         src_H_perf = source_domain.H_perfect(:, :, 1:nSamples);
         tgt_H_li   = target_domain.H_li(:, :, 1:nSamples);
+
+        % Preprocess Target LI: Clip extrapolation elements outside pilot boundaries
+        % to the min/max values (real and imag separately) of the inner interpolation region
+        for n = 1:nSamples
+            tgt_H_li(:, :, n) = crop_(tgt_H_li(:, :, n), ...
+                [min(pilot_cols), max(pilot_cols)], ...
+                [min(pilot_rows), max(pilot_rows)]);
+        end
 
         % Step A: Generate pseudo label (H_pseudo) by Fourier translation in Delay-Doppler domain
         % Translates target style (Doppler/delay) into source channel
@@ -388,7 +403,7 @@ function translate_img = FTranslate_bulk(source_img, target_img, win_h_px, win_w
     translate_img = zeros(size(target_img));
 
     for n = 1:size(target_img, 3)
-        target_img_slice = crop_(target_img(:, :, n), [1, 128], [3, 12]);
+        target_img_slice = target_img(:, :, n);
         translate_img(:, :, n) = FTranslate_single(source_img(:, :, n), target_img_slice, win_h_px, win_w_px);
     end
 
