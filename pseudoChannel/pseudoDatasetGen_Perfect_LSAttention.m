@@ -15,8 +15,7 @@
 %      * Phase 2 (N_min+1 to N_max): In-order for the larger dataset, while sampling
 %        randomly from the smaller dataset.
 %      * Phase 3 (> N_max): Random sampling from both Source and Target datasets.
-%    - Saves explicit mapping indices: idx_map_source and idx_map_target into matlabNTN.mat
-%      and sample_mapping.mat.
+%    - Saves explicit mapping indices: idx_map_source and idx_map_target directly into matlabNTN.mat.
 %
 % 3. 5G NR Transmission, Noise Realization & Channel Estimation:
 %    - Simulates pilot transmission across the generated pseudo channel grids.
@@ -430,10 +429,6 @@ for w_w = w_window
             'ssim_ls', ...       % Average SSIM of LS at pilots
             'ssim_ls_pilot', ... % Average SSIM of LS at pilots (alias)
             '-v7.3');
-
-        % Also save global mapping file at outputFolder root
-        mapping_mat = fullfile(outputFolder, 'sample_mapping.mat');
-        save(mapping_mat, 'idx_map_source', 'idx_map_target', 'N_src', 'N_tgt', 'nSamples', '-v7.3');
 
         fprintf('Saved: %s\n', output_mat);
         fprintf('  -> NMSE (LI): %.4f (%.2f dB) | NMSE (LS pilots): %.4f (%.2f dB)\n', ...

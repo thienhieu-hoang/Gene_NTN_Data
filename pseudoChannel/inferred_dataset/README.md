@@ -45,7 +45,7 @@ Both [`pseudoDatasetGen_Perfect_LI.m`](../pseudoDatasetGen_Perfect_LI.m) and [`p
   - **Phase 1 ($1 \dots N_{\min}$):** In-order 1-to-1 sequential mapping (`idx_map_source(i) = i`, `idx_map_target(i) = i`).
   - **Phase 2 ($N_{\min}+1 \dots N_{\max}$):** The larger dataset proceeds in sequential order, while the smaller dataset draws samples uniformly at random with replacement.
   - **Phase 3 ($> N_{\max}$):** Both datasets draw random samples with replacement until the requested sample count is achieved.
-  - Saves `idx_map_source` and `idx_map_target` into each `matlabNTN.mat` and `sample_mapping.mat` for full reproducibility.
+  - Embeds `idx_map_source` and `idx_map_target` directly into each `matlabNTN.mat` for full reproducibility (no separate mapping file needed).
 
 ---
 
@@ -79,15 +79,17 @@ pseudoChannel/
 ├── pseudoDatasetGen_Perfect_LI.m       <-- Generates pseudo data via Perfect -> LI translation
 ├── pseudoDatasetGen_Perfect_LSAttention.m <-- Generates pseudo data via Perfect -> LS_infer translation
 │
-├── A100Perfect__DUR300LI/             <-- Output from pseudoDatasetGen_Perfect_LI.m
-│   ├── sample_mapping.mat
+├── A100Perfect__DUR300LI_rms/         <-- Output from pseudoDatasetGen_Perfect_LI.m
 │   ├── note.md
 │   ├── 13x3/
+│   │   ├── matlabNTN.mat (embeds idx_map_source, idx_map_target)
+│   │   └── ...
 │   └── 13x5/
 │
-└── A100Perfect__DUR300LSAttention/    <-- Output from pseudoDatasetGen_Perfect_LSAttention.m
-    ├── sample_mapping.mat
+└── A100Perfect__DUR300LSAttention_rms/ <-- Output from pseudoDatasetGen_Perfect_LSAttention.m
     ├── note.md
     ├── 13x3/
+    │   ├── matlabNTN.mat (embeds idx_map_source, idx_map_target)
+    │   └── ...
     └── 13x5/
 ```
