@@ -59,6 +59,14 @@ num_pseudo_samples = [];
 % Random seed for reproducible sample pairing across SNRs
 rng_seed = 42;
 
+% Preprocessing scaling mode for Fourier Domain Adaptation ("rms", "minmax", or "none"):
+%   "rms"    - Normalizes both source and target to unit RMS power before FDA,
+%              then descales the pseudo channel with target RMS power.
+%   "minmax" - Scales Real/Imag parts to [-1, 1] before FDA,
+%              then descales with target [min, max] range.
+%   "none"   - Direct unscaled FDA mixing.
+preprocessing_scale = "rms";
+
 if exist('mfilename', 'builtin') && ~isempty(mfilename('fullpath'))
     script_dir = fileparts(mfilename('fullpath'));
 elseif exist('matlab.desktop.editor.getActiveFilename', 'builtin') && ~isempty(matlab.desktop.editor.getActiveFilename)
@@ -183,6 +191,7 @@ if fid ~= -1
     fprintf(fid, '| **Fourier Transfer (FDA)** | **Perfect (source)** $\\rightarrow$ **LI (target)** (`src_H_perf` $\\rightarrow$ `tgt_H_li`) |\n');
     fprintf(fid, '| **Source Domain** | NTN TDL-A (NLOS, 70° elevation, 100 ns delay spread, 30 kHz SCS) |\n');
     fprintf(fid, '| **Target Domain** | OpenNTN DUR NLOS (30° elevation, 300 ns delay spread, 30 kHz SCS) |\n');
+    fprintf(fid, '| **FDA Preprocessing Scaling** | `%s` (Source & Target normalized to unit RMS, descaled by Target RMS) |\n', preprocessing_scale);
     fprintf(fid, '| **FDA Window ($13 \\times w_w$)** | %s |\n', mat2str(w_window));
     fprintf(fid, '| **SNR Range** | %s dB |\n', mat2str(SNR_dB));
     fprintf(fid, '| **Requested Pseudo Samples** | %s |\n', mat2str(num_pseudo_samples));
@@ -301,9 +310,9 @@ for w_w = w_window
 
         % Step A: Generate pseudo label (H_pseudo) by Fourier translation in Delay-Doppler domain
         % Translates target style (Doppler/delay) into source channel
-        pseudo_label_li = FTranslate_bulk(src_H_perf, tgt_H_li, 13, w_w); % 14 x 132 x nSamples
-        H_perfect = pseudo_label_li;                                     % Pseudo ground truth
-        H_pseudo  = permute(pseudo_label_li, [2, 1, 3]);                 % 132 x 14 x nSamples
+        pseudo_label_li = FTranslate_bulk(src_H_perf, tgt_H_li, 13, w_w, preprocessing_scale); % 14 x 132 x nSamples
+        H_perfect = pseudo_label_li;                                                            % Pseudo ground truth
+        H_pseudo  = permute(pseudo_label_li, [2, 1, 3]);                                        % 132 x 14 x nSamples
 
         % Initialize output arrays
         H_li = zeros(size(pseudo_label_li));
@@ -547,14 +556,71 @@ function img_slice = crop_(img_slice, row_range, col_range)
     img_slice(is_outside) = complex(R, I);
 end
 
-function translate_img = FTranslate_bulk(source_img, target_img, win_h_px, win_w_px)
+function translate_img = FTranslate_bulk(source_img, target_img, win_h_px, win_w_px, preprocessing_scale)
+    if nargin < 5 || isempty(preprocessing_scale)
+        preprocessing_scale = "none";
+    end
+
     source_img = permute(source_img, [2, 1, 3]); % 132 x 14 x N
     target_img = permute(target_img, [2, 1, 3]); % 132 x 14 x N
     translate_img = zeros(size(target_img));
 
     for n = 1:size(target_img, 3)
-        target_img_slice = target_img(:, :, n);
-        translate_img(:, :, n) = FTranslate_single(source_img(:, :, n), target_img_slice, win_h_px, win_w_px);
+        src_n = source_img(:, :, n);
+        tgt_n = target_img(:, :, n);
+
+        if strcmpi(preprocessing_scale, "rms")
+            p_src = sqrt(mean(abs(src_n(:)).^2));
+            p_tgt = sqrt(mean(abs(tgt_n(:)).^2));
+
+            if p_src > 0
+                src_n_norm = src_n / p_src;
+            else
+                src_n_norm = src_n;
+            end
+
+            if p_tgt > 0
+                tgt_n_norm = tgt_n / p_tgt;
+            else
+                tgt_n_norm = tgt_n;
+            end
+
+            % FDA on normalized channels (both have RMS = 1.0)
+            pseudo_norm = FTranslate_single(src_n_norm, tgt_n_norm, win_h_px, win_w_px);
+
+            % Descale with Target RMS power to preserve Target physical power level
+            translate_img(:, :, n) = pseudo_norm * p_tgt;
+
+        elseif strcmpi(preprocessing_scale, "minmax") || strcmpi(preprocessing_scale, "min-max")
+            % Min-Max scaling to [-1, 1] on Real and Imag parts separately
+            r_min_src = min(real(src_n), [], 'all'); r_max_src = max(real(src_n), [], 'all');
+            i_min_src = min(imag(src_n), [], 'all'); i_max_src = max(imag(src_n), [], 'all');
+            dr_src = r_max_src - r_min_src; if dr_src == 0, dr_src = 1; end
+            di_src = i_max_src - i_min_src; if di_src == 0, di_src = 1; end
+
+            r_min_tgt = min(real(tgt_n), [], 'all'); r_max_tgt = max(real(tgt_n), [], 'all');
+            i_min_tgt = min(imag(tgt_n), [], 'all'); i_max_tgt = max(imag(tgt_n), [], 'all');
+            dr_tgt = r_max_tgt - r_min_tgt; if dr_tgt == 0, dr_tgt = 1; end
+            di_tgt = i_max_tgt - i_min_tgt; if di_tgt == 0, di_tgt = 1; end
+
+            src_norm_r = 2 * (real(src_n) - r_min_src) / dr_src - 1;
+            src_norm_i = 2 * (imag(src_n) - i_min_src) / di_src - 1;
+            src_n_norm = complex(src_norm_r, src_norm_i);
+
+            tgt_norm_r = 2 * (real(tgt_n) - r_min_tgt) / dr_tgt - 1;
+            tgt_norm_i = 2 * (imag(tgt_n) - i_min_tgt) / di_tgt - 1;
+            tgt_n_norm = complex(tgt_norm_r, tgt_norm_i);
+
+            % FDA on normalized channels in [-1, 1]
+            pseudo_norm = FTranslate_single(src_n_norm, tgt_n_norm, win_h_px, win_w_px);
+
+            % Descale with Target min/max range
+            pseudo_r = (real(pseudo_norm) + 1) / 2 * dr_tgt + r_min_tgt;
+            pseudo_i = (imag(pseudo_norm) + 1) / 2 * di_tgt + i_min_tgt;
+            translate_img(:, :, n) = complex(pseudo_r, pseudo_i);
+        else
+            translate_img(:, :, n) = FTranslate_single(src_n, tgt_n, win_h_px, win_w_px);
+        end
     end
 
     translate_img = permute(translate_img, [2, 1, 3]); % 14 x 132 x N
