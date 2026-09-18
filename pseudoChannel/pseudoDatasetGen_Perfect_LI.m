@@ -1,4 +1,4 @@
-%% Pseudo Dataset Generation for NTN Channel Estimation/Prediction (Version 2)
+%% Pseudo Dataset Generation for NTN Channel Estimation/Prediction (Version 2 - LI Target)
 % =========================================================================
 % WORKFLOW & PURPOSE:
 % 1. Pseudo Ground Truth Generation (FDA):
@@ -8,7 +8,17 @@
 %      Adaptation (FDA) with window size (w_h = 13 x w_w in [3, 5]).
 %    - Produces the pseudo ground-truth channel grid: H_perfect (14 x 132 x N).
 %
-% 2. 5G NR Transmission, Noise Realization & Channel Estimation:
+% 2. Flexible Sample Alignment & Expansion:
+%    - Allows generating arbitrary number of pseudo samples (num_pseudo_samples),
+%      even larger than the available samples in Source (N_src) and Target (N_tgt):
+%      * Phase 1 (1 to N_min): In-order 1-to-1 mapping (Source 1 -> Target 1, ..., N_min -> N_min).
+%      * Phase 2 (N_min+1 to N_max): In-order for the larger dataset, while sampling
+%        randomly with replacement from the smaller dataset.
+%      * Phase 3 (> N_max): Random sampling with replacement from both datasets.
+%    - Saves explicit mapping indices: idx_map_source and idx_map_target into matlabNTN.mat
+%      and sample_mapping.mat.
+%
+% 3. 5G NR Transmission, Noise Realization & Channel Estimation:
 %    - Simulates pilot transmission across the generated pseudo channel grids.
 %    - Injects complex AWGN calibrated to pilot signal power across target SNRs
 %      (SNR_dB = -10:5:15 dB).
@@ -16,7 +26,7 @@
 %    - Performs 2D scattered linear interpolation and edge boundary cropping
 %      to reconstruct the estimated channel grid: H_li (14 x 132 x N).
 %
-% 3. Metric Evaluation & Output Organization:
+% 4. Metric Evaluation & Output Organization:
 %    - Evaluates NMSE and complex SSIM metrics on both full-grid interpolated
 %      channels (nmse_li, ssim_li) and pilot-position estimations (nmse_ls_pilot,
 %      ssim_ls, ssim_li_pilot).
@@ -30,7 +40,7 @@
 
 % =========================================================================
 % Configuration: Source and Target Datasets
-% ===========================================================================
+% =========================================================================
 SourceDatasetPath = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\MATLAB\NTN_thruput\generatedChannel_Results\A100_2p18e9_600km_70deg_30kHz";
 TargetDatasetPath = "C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\Sionna\OpenNTN\channel_wGeometry\results\DUR300nsFix_NLoS_port1_Apos2_2p18G_600km_30deg_r15km_20to30mps";
 
@@ -41,6 +51,13 @@ outpuFolder  = outputFolder; % backward compatibility alias
 SNR_dB = -10:5:15;
 w_window = [3, 5];
 
+% Desired number of samples in generated pseudo dataset:
+% - Set to [] (or -1) to automatically use min(N_src, N_tgt)
+% - Can be set to any positive integer (e.g. 500, 1000, 1500, 2000), even > N_max
+num_pseudo_samples = [];
+
+% Random seed for reproducible sample pairing across SNRs
+rng_seed = 42;
 
 if exist('mfilename', 'builtin') && ~isempty(mfilename('fullpath'))
     script_dir = fileparts(mfilename('fullpath'));
@@ -63,6 +80,9 @@ if isempty(sample_target)
     sample_target = load_snr_dataset(TargetDatasetPath, 0);
 end
 if isempty(sample_target)
+    sample_target = load_snr_dataset(TargetDatasetPath);
+end
+if isempty(sample_target)
     error('Could not load any target dataset file from %s', TargetDatasetPath);
 end
 
@@ -70,8 +90,16 @@ if ~isfield(sample_target, 'pilot_rows') || ~isfield(sample_target, 'pilot_cols'
     error('Target dataset must contain "pilot_rows" and "pilot_cols" fields.');
 end
 
-pilot_rows = double(sample_target.pilot_rows(:)); % 1-based subcarrier indices (1 to 132) as column vector
-pilot_cols = double(sample_target.pilot_cols(:)); % 1-based OFDM symbol indices (1 to 14) as column vector
+pilot_rows = double(sample_target.pilot_rows(:)); % subcarrier indices as column vector
+pilot_cols = double(sample_target.pilot_cols(:)); % OFDM symbol indices as column vector
+
+% Safeguard for 0-based indexing
+if min(pilot_rows) == 0
+    pilot_rows = pilot_rows + 1;
+end
+if min(pilot_cols) == 0
+    pilot_cols = pilot_cols + 1;
+end
 numPilots = length(pilot_rows);
 
 % Map pilots with value 1 to the pilot positions in txGrid (132 subcarriers x 14 symbols)
@@ -93,7 +121,19 @@ end
 if isempty(source_domain) || ~isfield(source_domain, 'H_perfect')
     error('Could not load source ground truth (H_perfect) from %s', SourceDatasetPath);
 end
-fprintf('Loaded Source H_perfect with size: %s\n\n', mat2str(size(source_domain.H_perfect)));
+
+% Standardize source H_perfect dimensions to: (14 symbols x 132 subcarriers x N_src)
+src_H_perf_all = source_domain.H_perfect;
+if size(src_H_perf_all, 1) == 14 && size(src_H_perf_all, 2) == 132
+    % Already (14 x 132 x N)
+elseif size(src_H_perf_all, 2) == 132 && size(src_H_perf_all, 3) == 14
+    src_H_perf_all = permute(src_H_perf_all, [3, 2, 1]); % (N, 132, 14) -> (14, 132, N)
+elseif size(src_H_perf_all, 1) == 132 && size(src_H_perf_all, 2) == 14
+    src_H_perf_all = permute(src_H_perf_all, [2, 1, 3]); % (132, 14, N) -> (14, 132, N)
+end
+N_src_total = size(src_H_perf_all, 3);
+fprintf('Loaded Source H_perfect with size: %s (Total Samples: %d)\n\n', ...
+    mat2str(size(src_H_perf_all)), N_src_total);
 
 %% Create result folder and markdown notes
 if ~exist(outputFolder, 'dir')
@@ -107,8 +147,11 @@ if exist(src_note, 'file')
     fprintf('Copied Source note.md -> %s\n', fullfile(outputFolder, 'note_source.md'));
 end
 
-% Copy target note.md if available
+% Copy target documentation if available (note.md or info.md)
 tgt_note = fullfile(TargetDatasetPath, 'note.md');
+if ~exist(tgt_note, 'file')
+    tgt_note = fullfile(TargetDatasetPath, 'info.md');
+end
 if exist(tgt_note, 'file')
     copyfile(tgt_note, fullfile(outputFolder, 'note_target.md'));
     fprintf('Copied Target note.md -> %s\n', fullfile(outputFolder, 'note_target.md'));
@@ -126,9 +169,13 @@ if fid ~= -1
     fprintf(fid, '- **Target Dataset Path:** `%s`\n', TargetDatasetPath);
     fprintf(fid, '- **Result Folder:** `%s`\n', outputFolder);
     fprintf(fid, '- **Generation Date:** %s\n\n', string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss')));
-    fprintf(fid, '> **Note on Fourier Transfer:**\n');
-    fprintf(fid, '> The Fourier transfer is the result of translation of **Perfect (source) -> LI (target)** (`src_H_perf` -> `tgt_H_li`).\n');
-    fprintf(fid, '> Low-frequency Delay-Doppler components from the target domain linear interpolated channel (`tgt_H_li`, pre-processed with extrapolation clipping) are transferred onto the clean source ground-truth channel (`src_H_perf`) to generate the pseudo ground-truth channel (`H_perfect`).\n\n');
+    fprintf(fid, '> **Note on Fourier Transfer & Sampling Strategy:**\n');
+    fprintf(fid, '> - Low-frequency Delay-Doppler components from target domain linear interpolated channel (`tgt_H_li`, pre-processed with extrapolation clipping) are transferred onto the clean source channel (`src_H_perf`) to generate pseudo ground truth (`H_perfect`).\n');
+    fprintf(fid, '> - When dataset sizes differ or when target pseudo sample count exceeds dataset sizes:\n');
+    fprintf(fid, '>   * Samples `1` to `N_min`: Strict 1-to-1 sequential mapping (Source `i` -> Target `i`).\n');
+    fprintf(fid, '>   * Samples `N_min+1` to `N_max`: Sequential mapping for the larger dataset, uniform random sampling from the smaller dataset.\n');
+    fprintf(fid, '>   * Samples `> N_max`: Uniform random sampling from both Source and Target datasets.\n');
+    fprintf(fid, '> - Corresponding index mappings are preserved in variables `idx_map_source` and `idx_map_target`.\n\n');
     fprintf(fid, '---\n\n');
     fprintf(fid, '## Configuration Summary\n\n');
     fprintf(fid, '| Parameter | Value |\n');
@@ -138,10 +185,11 @@ if fid ~= -1
     fprintf(fid, '| **Target Domain** | OpenNTN DUR NLOS (30° elevation, 300 ns delay spread, 30 kHz SCS) |\n');
     fprintf(fid, '| **FDA Window ($13 \\times w_w$)** | %s |\n', mat2str(w_window));
     fprintf(fid, '| **SNR Range** | %s dB |\n', mat2str(SNR_dB));
+    fprintf(fid, '| **Requested Pseudo Samples** | %s |\n', mat2str(num_pseudo_samples));
     fprintf(fid, '| **Grid Dimensions** | 132 Subcarriers × 14 OFDM Symbols (11 RBs) |\n');
     fprintf(fid, '| **Pilot Configuration** | DM-RS Type 2 Port 1 (%d pilots per slot: symbols 3, 12; subcarriers 1-128) |\n', numPilots);
     fprintf(fid, '| **Pre-processing** | Target LI extrapolated elements clipped to inner pilot region min/max prior to FDA |\n');
-    fprintf(fid, '| **Saved Variables** | `H_perfect`, `H_li`, `H_ls_pilots`, `pilot_rows`, `pilot_cols`, `pilot_indices`, `nmse_li`, `nmse_ls_pilot`, `ssim_li`, `ssim_li_pilot`, `ssim_ls` |\n\n');
+    fprintf(fid, '| **Saved Variables** | `H_perfect`, `H_li`, `H_ls_pilots`, `pilot_rows`, `pilot_cols`, `pilot_indices`, `idx_map_source`, `idx_map_target`, `nmse_li`, `nmse_ls_pilot`, `ssim_li`, `ssim_li_pilot`, `ssim_ls` |\n\n');
     fprintf(fid, '## Linked Reference Notes\n\n');
     fprintf(fid, '- [Source Dataset Note](note_source.md)\n');
     fprintf(fid, '- [Target Dataset Note](note_target.md)\n');
@@ -157,14 +205,91 @@ for w_w = w_window
         
         target_domain = load_snr_dataset(TargetDatasetPath, snr_db);
         if isempty(target_domain) || ~isfield(target_domain, 'H_li')
-            warning('Target dataset H_li not found for SNR=%d dB. Skipping.', snr_db);
+            warning('Target dataset H_li not found for SNR=%d dB in %s. Skipping.', snr_db, TargetDatasetPath);
             continue;
         end
 
-        % Align sample count across source and target
-        nSamples = min(size(source_domain.H_perfect, 3), size(target_domain.H_li, 3));
-        src_H_perf = source_domain.H_perfect(:, :, 1:nSamples);
-        tgt_H_li   = target_domain.H_li(:, :, 1:nSamples);
+        % Standardize target H_li dimensions to: (14 symbols x 132 subcarriers x N_tgt)
+        tgt_H_raw = double(target_domain.H_li);
+        if size(tgt_H_raw, 1) == 14 && size(tgt_H_raw, 2) == 132
+            tgt_H_li_all = tgt_H_raw;
+        elseif size(tgt_H_raw, 2) == 132 && size(tgt_H_raw, 3) == 14
+            tgt_H_li_all = permute(tgt_H_raw, [3, 2, 1]); % (N, 132, 14) -> (14, 132, N)
+        elseif size(tgt_H_raw, 1) == 132 && size(tgt_H_raw, 2) == 14
+            tgt_H_li_all = permute(tgt_H_raw, [2, 1, 3]); % (132, 14, N) -> (14, 132, N)
+        elseif size(tgt_H_raw, 2) == 14 && size(tgt_H_raw, 3) == 132
+            tgt_H_li_all = permute(tgt_H_raw, [2, 3, 1]); % (N, 14, 132) -> (14, 132, N)
+        else
+            error('Unexpected dimensions for target H_li: %s', mat2str(size(tgt_H_raw)));
+        end
+
+        % Sample Count Determination and Alignment
+        N_src = size(src_H_perf_all, 3);
+        N_tgt = size(tgt_H_li_all, 3);
+
+        if isempty(num_pseudo_samples) || num_pseudo_samples <= 0
+            nSamples = min(N_src, N_tgt);
+        else
+            nSamples = round(num_pseudo_samples);
+        end
+
+        % Seed RNG for reproducible sampling across SNR loops
+        if ~isempty(rng_seed)
+            rng(rng_seed);
+        end
+
+        N_min = min(N_src, N_tgt);
+        N_max = max(N_src, N_tgt);
+
+        idx_map_source = zeros(1, nSamples);
+        idx_map_target = zeros(1, nSamples);
+
+        % Phase 1: Samples 1 to min(nSamples, N_min) -> Sequential 1-to-1 mapping
+        n_p1 = min(nSamples, N_min);
+        idx_map_source(1:n_p1) = 1:n_p1;
+        idx_map_target(1:n_p1) = 1:n_p1;
+
+        % Phase 2: Samples N_min+1 to min(nSamples, N_max)
+        % Larger dataset stays sequential; smaller dataset samples uniformly at random
+        if nSamples > N_min
+            n_p2_end = min(nSamples, N_max);
+            p2_range = (N_min + 1) : n_p2_end;
+            len_p2   = length(p2_range);
+            if N_src >= N_tgt
+                % Source is larger -> Source in-order, Target random
+                idx_map_source(p2_range) = p2_range;
+                idx_map_target(p2_range) = randi(N_tgt, 1, len_p2);
+            else
+                % Target is larger -> Target in-order, Source random
+                idx_map_source(p2_range) = randi(N_src, 1, len_p2);
+                idx_map_target(p2_range) = p2_range;
+            end
+        end
+
+        % Phase 3: Samples N_max+1 to nSamples
+        % Both datasets pick random samples uniformly with replacement
+        if nSamples > N_max
+            p3_range = (N_max + 1) : nSamples;
+            len_p3   = length(p3_range);
+            idx_map_source(p3_range) = randi(N_src, 1, len_p3);
+            idx_map_target(p3_range) = randi(N_tgt, 1, len_p3);
+        end
+
+        fprintf('Dataset Alignment: Source (%d) | Target (%d) -> Generating %d pseudo samples\n', ...
+            N_src, N_tgt, nSamples);
+        fprintf('  - Phase 1 (1:%d): 1-to-1 sequential\n', n_p1);
+        if nSamples > N_min
+            fprintf('  - Phase 2 (%d:%d): Larger dataset sequential, smaller dataset random\n', ...
+                N_min + 1, min(nSamples, N_max));
+        end
+        if nSamples > N_max
+            fprintf('  - Phase 3 (%d:%d): Both datasets random sampling\n', ...
+                N_max + 1, nSamples);
+        end
+
+        % Slice channels according to index mapping
+        src_H_perf = src_H_perf_all(:, :, idx_map_source);
+        tgt_H_li   = tgt_H_li_all(:, :, idx_map_target);
 
         % Preprocess Target LI: Clip extrapolation elements outside pilot boundaries
         % to the min/max values (real and imag separately) of the inner interpolation region
@@ -259,6 +384,8 @@ for w_w = w_window
             'pilot_rows', ...    % 1-based subcarrier coordinates: (1 x numPilots)
             'pilot_cols', ...    % 1-based OFDM symbol coordinates: (1 x numPilots)
             'pilot_indices', ... % 1-based linear indices in 132x14 grid
+            'idx_map_source', ...% Source sample indices mapped to pseudo samples: (1 x nSamples)
+            'idx_map_target', ...% Target sample indices mapped to pseudo samples: (1 x nSamples)
             'nmse_li', ...       % Average NMSE of linear interpolation
             'nmse_ls_pilot', ... % Average NMSE of LS at pilots
             'ssim_li', ...       % Average SSIM of linear interpolation (full grid)
@@ -267,6 +394,10 @@ for w_w = w_window
             'ssim_ls_pilot', ... % Average SSIM of LS at pilots (alias)
             '-v7.3');
 
+        % Also save global mapping file at outputFolder root
+        mapping_mat = fullfile(outputFolder, 'sample_mapping.mat');
+        save(mapping_mat, 'idx_map_source', 'idx_map_target', 'N_src', 'N_tgt', 'nSamples', '-v7.3');
+
         fprintf('Saved: %s\n', output_mat);
         fprintf('  -> NMSE (LI): %.4f (%.2f dB) | NMSE (LS pilots): %.4f (%.2f dB)\n', ...
             nmse_li, 10*log10(nmse_li), nmse_ls_pilot, 10*log10(nmse_ls_pilot));
@@ -274,7 +405,7 @@ for w_w = w_window
             ssim_li, ssim_li_pilot, ssim_ls);
 
         % Step F: Plot and Save Channel Visualizations (4 pairs: Magnitude & Real)
-        plot_channel_comparisons(save_folder, src_H_perf, tgt_H_li, H_perfect, H_li, snr_db, w_w);
+        plot_channel_comparisons(save_folder, src_H_perf, tgt_H_li, H_perfect, H_li, snr_db, w_w, idx_map_source, idx_map_target);
     end
 end
 
@@ -285,13 +416,16 @@ fprintf('\nAll pseudo dataset generations finished successfully!\n');
 %% ========================================================================
 
 function matData = load_snr_dataset(datasetPath, snr_db)
-    % Adaptively loads .mat file (matlabNTN.mat or channel_dur_randomizedUE.mat)
-    % from either SNR_<snr>dB or <snr>dB subfolder
+    % Adaptively loads .mat file (inferredChannel.mat, matlabNTN.mat, or channel_dur_randomizedUE.mat)
+    % from SNR_<snr>dB or <snr>dB subfolder
     matData = [];
     if nargin >= 2 && ~isempty(snr_db)
         candidates = {
             fullfile(datasetPath, ['SNR_', num2str(snr_db), 'dB']), ...
-            fullfile(datasetPath, [num2str(snr_db), 'dB'])
+            fullfile(datasetPath, [num2str(snr_db), 'dB']), ...
+            fullfile(datasetPath, ['LS_', num2str(snr_db), 'dB']), ...
+            fullfile(datasetPath, ['LS_SNR_', num2str(snr_db), 'dB']), ...
+            fullfile(datasetPath, ['+', num2str(snr_db), 'dB'])
         };
     else
         candidates = {
@@ -306,7 +440,8 @@ function matData = load_snr_dataset(datasetPath, snr_db)
         if exist(fDir, 'dir')
             matFiles = {
                 fullfile(fDir, 'matlabNTN.mat'), ...
-                fullfile(fDir, 'channel_dur_randomizedUE.mat')
+                fullfile(fDir, 'channel_dur_randomizedUE.mat'), ...
+                fullfile(fDir, 'inferredChannel.mat')
             };
             for j = 1:length(matFiles)
                 if exist(matFiles{j}, 'file')
@@ -318,6 +453,21 @@ function matData = load_snr_dataset(datasetPath, snr_db)
             d = dir(fullfile(fDir, '*.mat'));
             if ~isempty(d)
                 matData = load(fullfile(fDir, d(1).name));
+                return;
+            end
+        end
+    end
+
+    % Direct search in datasetPath if not found in candidate subfolders
+    if exist(datasetPath, 'dir')
+        matFiles = {
+            fullfile(datasetPath, 'matlabNTN.mat'), ...
+            fullfile(datasetPath, 'channel_dur_randomizedUE.mat'), ...
+            fullfile(datasetPath, 'inferredChannel.mat')
+        };
+        for j = 1:length(matFiles)
+            if exist(matFiles{j}, 'file')
+                matData = load(matFiles{j});
                 return;
             end
         end
@@ -445,7 +595,7 @@ function s = ssim_real_val(x, y)
     s = num / den;
 end
 
-function plot_channel_comparisons(save_folder, src_H_perf, tgt_H_li, pseudo_H_perf, pseudo_H_li, snr_db, w_w)
+function plot_channel_comparisons(save_folder, src_H_perf, tgt_H_li, pseudo_H_perf, pseudo_H_li, snr_db, w_w, idx_src_map, idx_tgt_map)
 % PLOT_CHANNEL_COMPARISONS Generates 4 pairs of figures (Magnitude & Real) per SNR subfolder.
 % Each figure contains 4 subplots:
 %   1. Source H_perfect (Original clean source ground truth)
@@ -462,6 +612,8 @@ function plot_channel_comparisons(save_folder, src_H_perf, tgt_H_li, pseudo_H_pe
 
     for k = 1:length(sample_indices)
         idx = sample_indices(k);
+        src_orig_idx = idx_src_map(idx);
+        tgt_orig_idx = idx_tgt_map(idx);
 
         % Transpose from (14 symbols x 132 subcarriers) to (132 subcarriers x 14 symbols)
         % so Y-axis represents subcarrier and X-axis represents OFDM symbol
@@ -477,28 +629,28 @@ function plot_channel_comparisons(save_folder, src_H_perf, tgt_H_li, pseudo_H_pe
         imagesc(1:14, 1:132, abs(h_src_perf));
         colorbar;
         xlabel('OFDM Symbol'); ylabel('Subcarrier');
-        title(sprintf('Source H_{perfect} (Sample %d)', idx), 'FontSize', 11, 'FontWeight', 'bold');
+        title(sprintf('Source H_{perfect} (Pseudo #%d, Src #%d)', idx, src_orig_idx), 'FontSize', 10, 'FontWeight', 'bold');
 
         subplot(2, 2, 2);
         imagesc(1:14, 1:132, abs(h_tgt_li));
         colorbar;
         xlabel('OFDM Symbol'); ylabel('Subcarrier');
-        title(sprintf('Target H_{li} (Sample %d)', idx), 'FontSize', 11, 'FontWeight', 'bold');
+        title(sprintf('Target H_{li} (Pseudo #%d, Tgt #%d)', idx, tgt_orig_idx), 'FontSize', 10, 'FontWeight', 'bold');
 
         subplot(2, 2, 3);
         imagesc(1:14, 1:132, abs(h_pseudo_perf));
         colorbar;
         xlabel('OFDM Symbol'); ylabel('Subcarrier');
-        title(sprintf('Pseudo H_{perfect} (FDA 13x%d, Sample %d)', w_w, idx), 'FontSize', 11, 'FontWeight', 'bold');
+        title(sprintf('Pseudo H_{perfect} (FDA 13x%d, Sample %d)', w_w, idx), 'FontSize', 10, 'FontWeight', 'bold');
 
         subplot(2, 2, 4);
         imagesc(1:14, 1:132, abs(h_pseudo_li));
         colorbar;
         xlabel('OFDM Symbol'); ylabel('Subcarrier');
-        title(sprintf('Pseudo H_{li} (SNR %d dB, Sample %d)', snr_db, idx), 'FontSize', 11, 'FontWeight', 'bold');
+        title(sprintf('Pseudo H_{li} (SNR %d dB, Sample %d)', snr_db, idx), 'FontSize', 10, 'FontWeight', 'bold');
 
-        sgtitle(sprintf('Channel Magnitude |H| Comparison - Sample %d (Window 13x%d, SNR %d dB)', idx, w_w, snr_db), ...
-            'FontSize', 13, 'FontWeight', 'bold');
+        sgtitle(sprintf('Channel Magnitude |H| - Pseudo #%d [Src #%d + Tgt #%d] (Window 13x%d, SNR %d dB)', ...
+            idx, src_orig_idx, tgt_orig_idx, w_w, snr_db), 'FontSize', 12, 'FontWeight', 'bold');
 
         mag_file = fullfile(save_folder, sprintf('sample_%d_magnitude.png', idx));
         saveas(fig_mag, mag_file);
@@ -511,28 +663,28 @@ function plot_channel_comparisons(save_folder, src_H_perf, tgt_H_li, pseudo_H_pe
         imagesc(1:14, 1:132, real(h_src_perf));
         colorbar;
         xlabel('OFDM Symbol'); ylabel('Subcarrier');
-        title(sprintf('Source H_{perfect} (Sample %d)', idx), 'FontSize', 11, 'FontWeight', 'bold');
+        title(sprintf('Source H_{perfect} (Pseudo #%d, Src #%d)', idx, src_orig_idx), 'FontSize', 10, 'FontWeight', 'bold');
 
         subplot(2, 2, 2);
         imagesc(1:14, 1:132, real(h_tgt_li));
         colorbar;
         xlabel('OFDM Symbol'); ylabel('Subcarrier');
-        title(sprintf('Target H_{li} (Sample %d)', idx), 'FontSize', 11, 'FontWeight', 'bold');
+        title(sprintf('Target H_{li} (Pseudo #%d, Tgt #%d)', idx, tgt_orig_idx), 'FontSize', 10, 'FontWeight', 'bold');
 
         subplot(2, 2, 3);
         imagesc(1:14, 1:132, real(h_pseudo_perf));
         colorbar;
         xlabel('OFDM Symbol'); ylabel('Subcarrier');
-        title(sprintf('Pseudo H_{perfect} (FDA 13x%d, Sample %d)', w_w, idx), 'FontSize', 11, 'FontWeight', 'bold');
+        title(sprintf('Pseudo H_{perfect} (FDA 13x%d, Sample %d)', w_w, idx), 'FontSize', 10, 'FontWeight', 'bold');
 
         subplot(2, 2, 4);
         imagesc(1:14, 1:132, real(h_pseudo_li));
         colorbar;
         xlabel('OFDM Symbol'); ylabel('Subcarrier');
-        title(sprintf('Pseudo H_{li} (SNR %d dB, Sample %d)', snr_db, idx), 'FontSize', 11, 'FontWeight', 'bold');
+        title(sprintf('Pseudo H_{li} (SNR %d dB, Sample %d)', snr_db, idx), 'FontSize', 10, 'FontWeight', 'bold');
 
-        sgtitle(sprintf('Channel Real Part Re(H) Comparison - Sample %d (Window 13x%d, SNR %d dB)', idx, w_w, snr_db), ...
-            'FontSize', 13, 'FontWeight', 'bold');
+        sgtitle(sprintf('Channel Real Part Re(H) - Pseudo #%d [Src #%d + Tgt #%d] (Window 13x%d, SNR %d dB)', ...
+            idx, src_orig_idx, tgt_orig_idx, w_w, snr_db), 'FontSize', 12, 'FontWeight', 'bold');
 
         real_file = fullfile(save_folder, sprintf('sample_%d_real.png', idx));
         saveas(fig_real, real_file);
