@@ -4,6 +4,7 @@
 
 - **Method:** Delay-Doppler Fourier Domain Adaptation (FDA) + 5G NR DM-RS Pilot & Noise Realization
 - **Fourier Transfer (FDA):** Translation of **Perfect (source) -> LI (target)** (`src_H_perf` -> `tgt_H_li`)
+- **Approche for preprocessing for FDA:** rms
 - **Source Dataset Path:** `C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\MATLAB\NTN_thruput\generatedChannel_Results\A100_2p18e9_600km_70deg_30kHz`
 - **Target Dataset Path:** `C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\Sionna\OpenNTN\channel_wGeometry\results\DUR300nsFix_NLoS_port1_Apos2_2p18G_600km_30deg_r15km_20to30mps`
 - **Result Folder:** `C:\Users\AT30890\Hoctap\1_Hprediction\working\H_predict_NTN\Gene_NTN_Data\pseudoChannel\A100Perfect__DUR300LI_rms`

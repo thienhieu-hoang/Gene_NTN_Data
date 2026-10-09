@@ -3,6 +3,8 @@
 - **Source Trained Model Folder**: single_dataset\A100_2p18e9_600km_70deg_30kHz\LS_Attention_standardize
 - **Target Dataset Folder**: DUR300nsFix_NLoS_port1_Apos2_2p18G_600km_30deg_r15km_20to30mps
 
+Preprocessing to infer: standardize
+
 ## Inference Performance Summary
 | SNR (dB) | MMSE | NMSE | NMSE (dB) | SSIM |
 |----------|------|------|-----------|------|

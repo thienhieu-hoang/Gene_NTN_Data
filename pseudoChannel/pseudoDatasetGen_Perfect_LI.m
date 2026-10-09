@@ -57,13 +57,15 @@ num_pseudo_samples = [];
 % Random seed for reproducible sample pairing across SNRs
 rng_seed = 42;
 
-% Preprocessing scaling mode for Fourier Domain Adaptation ("rms", "minmax", or "none"):
-%   "rms"    - Normalizes both source and target to unit RMS power before FDA,
-%              then descales the pseudo channel with target RMS power.
-%   "minmax" - Scales Real/Imag parts to [-1, 1] before FDA,
-%              then descales with target [min, max] range.
-%   "none"   - Direct unscaled FDA mixing.
-preprocessing_scale = "rms";
+% Preprocessing scaling mode for Fourier Domain Adaptation ("rms", "minmax", "standardize", or "none"):
+%   "rms"         - Normalizes both source and target to unit RMS power before FDA,
+%                   then descales the pseudo channel with target RMS power.
+%   "minmax"      - Scales Real/Imag parts to [-1, 1] before FDA,
+%                   then descales with target [min, max] range.
+%   "standardize" - Standardizes Real/Imag parts to zero-mean and unit variance (z-score) before FDA,
+%                   then descales with target mean and std.
+%   "none"        - Direct unscaled FDA mixing.
+preprocessing_scale = "standardize";
 
 % Output directory with preprocessing suffix
 if isempty(preprocessing_scale) || strcmpi(preprocessing_scale, "none")
@@ -180,6 +182,7 @@ if fid ~= -1
     fprintf(fid, '## General Information\n\n');
     fprintf(fid, '- **Method:** Delay-Doppler Fourier Domain Adaptation (FDA) + 5G NR DM-RS Pilot & Noise Realization\n');
     fprintf(fid, '- **Fourier Transfer (FDA):** Translation of **Perfect (source) -> LI (target)** (`src_H_perf` -> `tgt_H_li`)\n');
+    fprintf(fid, '- **Approach for preprocessing for FDA:** %s\n', preprocessing_scale);
     fprintf(fid, '- **Source Dataset Path:** `%s`\n', SourceDatasetPath);
     fprintf(fid, '- **Target Dataset Path:** `%s`\n', TargetDatasetPath);
     fprintf(fid, '- **Result Folder:** `%s`\n', outputFolder);
@@ -198,7 +201,16 @@ if fid ~= -1
     fprintf(fid, '| **Fourier Transfer (FDA)** | **Perfect (source)** $\\rightarrow$ **LI (target)** (`src_H_perf` $\\rightarrow$ `tgt_H_li`) |\n');
     fprintf(fid, '| **Source Domain** | NTN TDL-A (NLOS, 70° elevation, 100 ns delay spread, 30 kHz SCS) |\n');
     fprintf(fid, '| **Target Domain** | OpenNTN DUR NLOS (30° elevation, 300 ns delay spread, 30 kHz SCS) |\n');
-    fprintf(fid, '| **FDA Preprocessing Scaling** | `%s` (Source & Target normalized to unit RMS, descaled by Target RMS) |\n', preprocessing_scale);
+    if strcmpi(preprocessing_scale, "rms")
+        scale_desc = "rms (Source & Target normalized to unit RMS, descaled by Target RMS)";
+    elseif strcmpi(preprocessing_scale, "minmax") || strcmpi(preprocessing_scale, "min-max")
+        scale_desc = "minmax (Real & Imag scaled to [-1, 1], descaled by Target range)";
+    elseif strcmpi(preprocessing_scale, "standardize")
+        scale_desc = "standardize (Real & Imag standardized to zero-mean unit-variance, descaled by Target mean & std)";
+    else
+        scale_desc = "none (Direct unscaled FDA mixing)";
+    end
+    fprintf(fid, '| **FDA Preprocessing Scaling** | `%s` |\n', scale_desc);
     fprintf(fid, '| **FDA Window ($13 \\times w_w$)** | %s |\n', mat2str(w_window));
     fprintf(fid, '| **SNR Range** | %s dB |\n', mat2str(SNR_dB));
     fprintf(fid, '| **Requested Pseudo Samples** | %s |\n', mat2str(num_pseudo_samples));
@@ -621,6 +633,34 @@ function translate_img = FTranslate_bulk(source_img, target_img, win_h_px, win_w
             % Descale with Target min/max range
             pseudo_r = (real(pseudo_norm) + 1) / 2 * dr_tgt + r_min_tgt;
             pseudo_i = (imag(pseudo_norm) + 1) / 2 * di_tgt + i_min_tgt;
+            translate_img(:, :, n) = complex(pseudo_r, pseudo_i);
+
+        elseif strcmpi(preprocessing_scale, "standardize") || strcmpi(preprocessing_scale, "std")
+            % Standardization (Z-score) on Real and Imag parts separately
+            mu_r_src = mean(real(src_n), 'all'); std_r_src = std(real(src_n), 0, 'all');
+            mu_i_src = mean(imag(src_n), 'all'); std_i_src = std(imag(src_n), 0, 'all');
+            if std_r_src == 0, std_r_src = 1; end
+            if std_i_src == 0, std_i_src = 1; end
+
+            mu_r_tgt = mean(real(tgt_n), 'all'); std_r_tgt = std(real(tgt_n), 0, 'all');
+            mu_i_tgt = mean(imag(tgt_n), 'all'); std_i_tgt = std(imag(tgt_n), 0, 'all');
+            if std_r_tgt == 0, std_r_tgt = 1; end
+            if std_i_tgt == 0, std_i_tgt = 1; end
+
+            src_norm_r = (real(src_n) - mu_r_src) / std_r_src;
+            src_norm_i = (imag(src_n) - mu_i_src) / std_i_src;
+            src_n_norm = complex(src_norm_r, src_norm_i);
+
+            tgt_norm_r = (real(tgt_n) - mu_r_tgt) / std_r_tgt;
+            tgt_norm_i = (imag(tgt_n) - mu_i_tgt) / std_i_tgt;
+            tgt_n_norm = complex(tgt_norm_r, tgt_norm_i);
+
+            % FDA on standardized channels (zero-mean, unit-variance)
+            pseudo_norm = FTranslate_single(src_n_norm, tgt_n_norm, win_h_px, win_w_px);
+
+            % Descale with Target mean and standard deviation
+            pseudo_r = real(pseudo_norm) * std_r_tgt + mu_r_tgt;
+            pseudo_i = imag(pseudo_norm) * std_i_tgt + mu_i_tgt;
             translate_img(:, :, n) = complex(pseudo_r, pseudo_i);
         else
             translate_img(:, :, n) = FTranslate_single(src_n, tgt_n, win_h_px, win_w_px);
