@@ -27,7 +27,7 @@ You asked:
 **Exactly right!**
 
 - **Min-Max only looks at 2 pixels out of 1,848** ($x_{\min}$ and $x_{\max}$).
-  If subcarrier #52 happens to catch a random $4\sigma$ AWGN noise spike, Min-Max stretches the whole bounding box to fit that one single noise spike. As a result, the useful channel signal in the remaining 1,847 pixels gets **artificially squashed** into a narrow band (e.g., $[-0.2, 0.2]$).
+  If subcarrier 52 happens to catch a random $4\sigma$ AWGN noise spike, Min-Max stretches the whole bounding box to fit that one single noise spike. As a result, the useful channel signal in the remaining 1,847 pixels gets **artificially squashed** into a narrow band (e.g., $[-0.2, 0.2]$).
 - **RMS averages all 1,848 pixels together**:
   $$\text{RMS} = \sqrt{\frac{1}{1848} \sum |H_{i,j}|^2}$$
   A noise spike on one single subcarrier only contributes $\frac{1}{1848}\text{-th}$ of its power to the average. The Law of Large Numbers makes the denominator **rock-solid and virtually immune to individual noise spikes**.
