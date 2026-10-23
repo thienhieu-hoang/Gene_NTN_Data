@@ -111,6 +111,14 @@ if ~isempty(script_dir) && exist(script_dir, 'dir')
     cd(script_dir);
 end
 
+% Add path to MATLAB helper directory (contains Lin_Interpolate.m)
+helper_path = fullfile(fileparts(script_dir), 'MATLAB', 'helper');
+if exist(helper_path, 'dir')
+    addpath(helper_path);
+else
+    addpath('..\MATLAB\helper\');
+end
+
 %% ========================================================================
 %% 1. Load Target Pilot Configuration & Build txGrid
 %% ========================================================================
@@ -473,7 +481,7 @@ function write_window_info_md(target_folder, win_w_px, cfg, grid_h, grid_w)
         else
             reg = "Outer (100% Source)";
         end
-        fprintf(fid, '| **Col %d** | $|x - %d| = %d$ | `%.4f` | %s |\n', x, cx, dist, val, reg);
+        fprintf(fid, '| **Col %d** | $\\vert x - %d \\vert = %d$ | `%.4f` | %s |\n', x, cx, dist, val, reg);
     end
     fprintf(fid, '\n');
 
@@ -492,7 +500,7 @@ function write_window_info_md(target_folder, win_w_px, cfg, grid_h, grid_w)
         else
             reg = "Outer (100% Source)";
         end
-        fprintf(fid, '| **Row %d** | $|y - %d| = %d$ | `%.4f` | %s |\n', y, cy, dist, val, reg);
+        fprintf(fid, '| **Row %d** | $\\vert y - %d \\vert = %d$ | `%.4f` | %s |\n', y, cy, dist, val, reg);
     end
     fprintf(fid, '\n');
 
