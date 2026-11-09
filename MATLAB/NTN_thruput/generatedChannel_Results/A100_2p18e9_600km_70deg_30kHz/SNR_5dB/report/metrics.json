@@ -1,0 +1,22 @@
+{
+    "folder_path": "C:\\Users\\AT30890\\Hoctap\\1_Hprediction\\working\\H_predict_NTN\\Hest_NTN_UDA_clean\\generatedChan\\MATLAB\\A100_2p18e9_600km_70deg_30kHz\\SNR_5dB",
+    "N": 1024,
+    "n_sc": 132,
+    "n_sym": 14,
+    "scs_khz": 30.0,
+    "tau_rms_ns": 202.32579577736914,
+    "tau_mean_ns": 56.11417799181697,
+    "tau_res_ns": 252.5252525252525,
+    "dnu_res_hz": 2000.0,
+    "bc_khz_05": 1500.0,
+    "bc_lag_05": 50.0,
+    "nu_mean_hz": -4.017595594949051,
+    "nu_rms_hz": 647.5725479507911,
+    "tc_ms_05": 0.46428571428571436,
+    "tc_lag_05": 13.0,
+    "avg_power": 2.987285117952582e-16,
+    "rms_power": 1.728376439885878e-08,
+    "dynamic_range_db": 78.20871043762816,
+    "nmse_li_db": -1.8789420284374976,
+    "ssim_li": 0.9999999999994542
+}

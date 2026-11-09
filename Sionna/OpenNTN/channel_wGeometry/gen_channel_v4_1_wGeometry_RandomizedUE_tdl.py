@@ -767,6 +767,33 @@ mat_data = {
 savemat(mat_filename, mat_data)
 print(f"Successfully saved batched randomized channel data of {N_samples} samples to {mat_filename}")
 
+# =========================================================================
+# Save .npy format for pyntn compatibility (shape: (N_samples, 132, 14), complex64)
+# =========================================================================
+# Transpose from (N_samples, 14 symbols, 132 subcarriers) -> (N_samples, 132, 14)
+H_npy = np.transpose(H_extracted_comp_all, (0, 2, 1)).astype(np.complex64)
+
+# Sample-wise RMS power normalization for pyntn compatibility (E[|H|^2] = 1.0 per slot)
+pwr = np.mean(np.abs(H_npy)**2, axis=(1, 2), keepdims=True)
+H_npy_norm = H_npy / np.sqrt(np.clip(pwr, 1e-30, None))
+
+# 1. Save in the current SNR folder
+npy_snr_path = os.path.join(output_dir, "H_perfect.npy")
+np.save(npy_snr_path, H_npy_norm)
+print(f"Successfully saved pyntn-compatible NPY channel to {npy_snr_path} [shape={H_npy_norm.shape}]")
+
+# 2. Save in parent setting folder (with train/val/test splits for direct use in pyntn.train)
+setting_base_dir = os.path.dirname(output_dir)
+os.makedirs(setting_base_dir, exist_ok=True)
+np.save(os.path.join(setting_base_dir, "H_perfect.npy"), H_npy_norm)
+
+n_train = int(0.80 * N_samples)
+n_val = int(0.10 * N_samples)
+np.save(os.path.join(setting_base_dir, f"{setting_dir}_train.npy"), H_npy_norm[:n_train])
+np.save(os.path.join(setting_base_dir, f"{setting_dir}_val.npy"), H_npy_norm[n_train:n_train + n_val])
+np.save(os.path.join(setting_base_dir, f"{setting_dir}_test.npy"), H_npy_norm[n_train + n_val:])
+print(f"Successfully saved pyntn splits in {setting_base_dir} (train: {n_train}, val: {n_val}, test: {N_samples - n_train - n_val})")
+
 # Save scenario parameters documentation
 delay_spreads_ns = np.array(delay_spreads_all) * 1e9
 avg_delay_spread_ns = np.mean(delay_spreads_ns) if len(delay_spreads_ns) > 0 else 0.0

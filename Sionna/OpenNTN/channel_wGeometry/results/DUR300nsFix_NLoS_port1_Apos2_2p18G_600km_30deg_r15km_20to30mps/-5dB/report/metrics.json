@@ -1,0 +1,22 @@
+{
+    "folder_path": "C:\\Users\\AT30890\\Hoctap\\1_Hprediction\\working\\H_predict_NTN\\Hest_NTN_UDA_clean\\generatedChan\\OpenNTN\\DUR300nsFix_NLoS_port1_Apos2_2p18G_600km_30deg_r15km_20to30mps\\-5dB",
+    "N": 2048,
+    "n_sc": 132,
+    "n_sym": 14,
+    "scs_khz": 30.0,
+    "tau_rms_ns": 382.4538167365474,
+    "tau_mean_ns": 219.45230284296466,
+    "tau_res_ns": 252.5252525252525,
+    "dnu_res_hz": 2000.0,
+    "bc_khz_05": 1060.187952853843,
+    "bc_lag_05": 35.33959842846143,
+    "nu_mean_hz": -1.3317129130012622,
+    "nu_rms_hz": 537.4721514092383,
+    "tc_ms_05": 0.46428571428571436,
+    "tc_lag_05": 13.0,
+    "avg_power": 2.9736013402757327e-19,
+    "rms_power": 5.453073757318648e-10,
+    "dynamic_range_db": 138.88660449314511,
+    "nmse_li_db": 5.695302949047059,
+    "ssim_li": 0.9999999999999994
+}

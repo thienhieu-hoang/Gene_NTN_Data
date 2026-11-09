@@ -338,6 +338,9 @@ for snr_idx = 1:length(SNRdB)
         'satelliteDopplerShift_bc', ...
         '-v7.3');
 
+    % Save .npy format for pyntn compatibility (shape: (numUE, 132, 14), complex64)
+    saveNPY_channel(fullfile(save_folder, 'H_perfect.npy'), H_perfect, true);
+
     %% 8. Save Markdown Report with Parameters & Geometry Metadata
     md_path = fullfile(save_folder, 'simulation_parameters.md');
     fid = fopen(md_path, 'w');
@@ -435,6 +438,31 @@ for snr_idx = 1:length(SNRdB)
         fullfile(save_folder, 'geometry_doppler_elevation_pass.pdf'));
 
 end
+
+%% 11. SAVE NPY DATASETS FOR DIRECT PYTHON / PYNTN COMPATIBILITY
+fprintf('\n--- Saving .npy files for pyntn compatibility ---\n');
+
+% 1. Save full H_perfect to base_folder (shape: (numUE, 132, 14), complex64)
+dataset_name = sprintf('%s%s_%se9_%s_%s_%s', profile_str, ds_str, fc_str, alt_str, elev_str, scs_str);
+npy_full_path = fullfile(base_folder, 'H_perfect.npy');
+saveNPY_channel(npy_full_path, H_perfect, true);
+
+% 2. Save 80% / 10% / 10% train, val, test splits for direct use in pyntn.train
+n_train = floor(0.80 * numUE);
+n_val   = floor(0.10 * numUE);
+
+H_train = H_perfect(:, :, 1:n_train);
+H_val   = H_perfect(:, :, n_train+1:n_train+n_val);
+H_test  = H_perfect(:, :, n_train+n_val+1:end);
+
+saveNPY_channel(fullfile(base_folder, [dataset_name, '_train.npy']), H_train, true);
+saveNPY_channel(fullfile(base_folder, [dataset_name, '_val.npy']), H_val, true);
+saveNPY_channel(fullfile(base_folder, [dataset_name, '_test.npy']), H_test, true);
+
+fprintf('Generated pyntn-ready dataset splits:\n');
+fprintf('  Train: %s (%d drops)\n', fullfile(base_folder, [dataset_name, '_train.npy']), size(H_train, 3));
+fprintf('  Val:   %s (%d drops)\n', fullfile(base_folder, [dataset_name, '_val.npy']), size(H_val, 3));
+fprintf('  Test:  %s (%d drops)\n', fullfile(base_folder, [dataset_name, '_test.npy']), size(H_test, 3));
 
 %% =========================================================================
 %% HELPER FUNCTIONS FOR GEOMETRY CALCULATIONS AND PLOTTING
@@ -665,4 +693,63 @@ function [XS, YS, ZS] = get_local_earth_patch_local(lambda_ref, phi_ref, a_earth
     XS = N_phi .* cos(LAT) .* cos(LON);
     YS = N_phi .* cos(LAT) .* sin(LON);
     ZS = N_phi .* (1.0 - e2) .* sin(LAT);
+end
+
+function saveNPY_channel(filename, H, normalize_rms)
+% SAVENPY_CHANNEL Save 3D complex channel matrix directly to NumPy .npy format.
+if nargin < 3
+    normalize_rms = true;
+end
+
+sz = size(H);
+if numel(sz) == 2
+    n_sym = sz(1);
+    n_sc = sz(2);
+    n_samples = 1;
+else
+    n_sym = sz(1);
+    n_sc = sz(2);
+    n_samples = sz(3);
+end
+
+if normalize_rms
+    for i = 1:n_samples
+        slot_pwr = mean(abs(H(:,:,i)).^2, 'all');
+        if slot_pwr > 0
+            H(:,:,i) = H(:,:,i) / sqrt(slot_pwr);
+        end
+    end
+end
+
+header_dict = sprintf('{''descr'': ''<c8'', ''fortran_order'': False, ''shape'': (%d, %d, %d), }', ...
+    n_samples, n_sc, n_sym);
+
+prefix_len = 10;
+target_total_header = 128;
+while target_total_header < prefix_len + length(header_dict) + 1
+    target_total_header = target_total_header + 64;
+end
+
+pad_len = target_total_header - prefix_len - length(header_dict) - 1;
+header_str = [header_dict, repmat(' ', 1, pad_len), newline];
+header_len_uint16 = uint16(length(header_str));
+
+num_elem = numel(H);
+interleaved = zeros(2, num_elem, 'single');
+interleaved(1, :) = single(real(H(:)));
+interleaved(2, :) = single(imag(H(:)));
+
+fid = fopen(filename, 'wb');
+if fid == -1
+    error('Could not open file for writing: %s', filename);
+end
+
+fwrite(fid, uint8([147, 'NUMPY']), 'uint8');
+fwrite(fid, uint8([1, 0]), 'uint8');
+fwrite(fid, header_len_uint16, 'uint16');
+fwrite(fid, uint8(header_str), 'uint8');
+fwrite(fid, interleaved, 'single');
+fclose(fid);
+fprintf('Saved NPY channel: %s [shape=(%d, %d, %d), complex64]\n', ...
+    filename, n_samples, n_sc, n_sym);
 end
