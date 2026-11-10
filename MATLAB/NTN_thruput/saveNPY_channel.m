@@ -58,6 +58,12 @@ interleaved = zeros(2, num_elem, 'single');
 interleaved(1, :) = single(real(H(:)));
 interleaved(2, :) = single(imag(H(:)));
 
+% Ensure parent folder exists
+folder_out = fileparts(filename);
+if ~isempty(folder_out) && ~exist(folder_out, 'dir')
+    mkdir(folder_out);
+end
+
 % Write binary file
 fid = fopen(filename, 'wb');
 if fid == -1

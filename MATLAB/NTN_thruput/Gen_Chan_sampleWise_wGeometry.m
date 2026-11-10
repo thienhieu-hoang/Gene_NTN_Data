@@ -1,3 +1,31 @@
+function Gen_Chan_sampleWise_wGeometry(varargin)
+% GEN_CHAN_SAMPLEWISE_WGEOMETRY Generates 3D NTN channel realizations with orbit geometry.
+%
+% Usage:
+%   % 1. Default run (NTN-TDL-A, 100ns, 70deg, generates both .mat and .npy):
+%   Gen_Chan_sampleWise_wGeometry()
+%
+%   % 2. Fast mode: ONLY generate .npy files for pyntn (skips heavy .mat and PDF plots):
+%   Gen_Chan_sampleWise_wGeometry('SaveOnlyNPY', true)
+%
+%   % 3. Custom scenario for pyntn (e.g. NTN-TDL-C, 300ns, 30deg):
+%   Gen_Chan_sampleWise_wGeometry('Profile', 'NTN-TDL-C', 'DelaySpread', 300e-9, ...
+%                                'ElevationAngle', 30, 'SaveOnlyNPY', true)
+%
+% Parameter Options (Name-Value):
+%   'Profile'            - Channel delay profile ('NTN-TDL-A', 'NTN-TDL-C', 'TDL-A', etc.) [Default: 'NTN-TDL-A']
+%   'DelaySpread'        - RMS delay spread in seconds [Default: 100e-9]
+%   'ElevationAngle'     - Satellite elevation angle in degrees [Default: 70]
+%   'CarrierFrequency'   - Carrier frequency in Hz [Default: 2.18e9]
+%   'SatelliteAltitude'  - Satellite altitude in meters [Default: 600000]
+%   'SubcarrierSpacing'  - SCS in kHz (15, 30, 60, 120) [Default: 30]
+%   'MobileSpeed'        - UE velocity in m/s [Default: 30]
+%   'NumUE'              - Number of independent UE drops/samples [Default: 1024]
+%   'SNRdB'              - Evaluation SNR(s) in dB [Default: 15]
+%   'SaveOnlyNPY'        - If true, generates ONLY clean channel and saves .npy splits (fast!) [Default: false]
+%   'SaveMat'            - Whether to save matlabNTN.mat [Default: true]
+%   'SavePlots'          - Whether to export PDF visualization plots [Default: true]
+
 if exist('mfilename', 'builtin') && ~isempty(mfilename('fullpath'))
     script_dir = fileparts(mfilename('fullpath'));
     if ~isempty(script_dir) && exist(script_dir, 'dir')
@@ -6,34 +34,51 @@ if exist('mfilename', 'builtin') && ~isempty(mfilename('fullpath'))
 end
 addpath('..\helper\')
 
+%% 0. Parse Input Parameters
+p = inputParser;
+addParameter(p, 'Profile', 'NTN-TDL-A', @(x) ischar(x) || isstring(x));
+addParameter(p, 'DelaySpread', 100e-9, @isnumeric);
+addParameter(p, 'CarrierFrequency', 2.18e9, @isnumeric);
+addParameter(p, 'SatelliteAltitude', 600000, @isnumeric);
+addParameter(p, 'ElevationAngle', 70, @isnumeric);
+addParameter(p, 'MobileSpeed', 30, @isnumeric);
+addParameter(p, 'SubcarrierSpacing', 30, @isnumeric);
+addParameter(p, 'NumUE', 1024, @isnumeric);
+addParameter(p, 'SNRdB', 15, @isnumeric);
+addParameter(p, 'SaveOnlyNPY', false, @islogical);
+addParameter(p, 'SaveMat', true, @islogical);
+addParameter(p, 'SavePlots', true, @islogical);
+parse(p, varargin{:});
+opt = p.Results;
+
+if opt.SaveOnlyNPY
+    opt.SaveMat = false;
+    opt.SavePlots = false;
+end
+
 %% 1. Carrier and Simulation Setup
 carrier = nrCarrierConfig;
 channel = nrTDLChannel; % small-scale coefficient of the channel
 
 % ========================================================
-SNRdB = 15;
-numUE = 1024;
+SNRdB = opt.SNRdB;
+numUE = opt.NumUE;
 r_beam = 15000.0;    % 15 km beam footprint radius
 r_ue_max = 14500.0;  % 14.5 km max UE offset inside beam
 
-% simParameters.CarrierFrequency = 20e9; % Ka band (20 GHz)                 % Carrier frequency (in Hz)
-% simParameters.SatelliteAltitude = 600000; % 1000 km altitude
-% carrier.SubcarrierSpacing = 120;  % 15, 30, 60, 120, 240 (kHz)
-% channel.DelaySpread = 100e-9;
-simParameters.CarrierFrequency = 2.18e9; % S band                      % Carrier frequency (in Hz)
-simParameters.SatelliteAltitude = 600000; % 600 km altitude
-carrier.SubcarrierSpacing = 30;  % 15, 30, 60, 120, 240 (kHz)
-channel.DelaySpread = 100e-9;
+simParameters.CarrierFrequency = opt.CarrierFrequency;
+simParameters.SatelliteAltitude = opt.SatelliteAltitude;
+carrier.SubcarrierSpacing = opt.SubcarrierSpacing;
+channel.DelaySpread = opt.DelaySpread;
 
-simParameters.ElevationAngle = 70; % Nominal elevation angle (in degrees)
-simParameters.MobileSpeed = 30;    % Speed of mobile terminal (in m/s)
+simParameters.ElevationAngle = opt.ElevationAngle;
+simParameters.MobileSpeed = opt.MobileSpeed;
 simParameters.MobileAltitude = 1.5; % Mobile antenna height above ground (in m)
 
 carrier.NSizeGrid = 11;          % Bandwidth in resource blocks (132 subcarriers)
 carrier.CyclicPrefix = 'Normal'; % 'Normal' or 'Extended'
 
-channel.DelayProfile = 'NTN-TDL-A'; % NLoS: A, B; LoS: C, D
-
+channel.DelayProfile = char(opt.Profile); % NLoS: A, B; LoS: C, D
 % ==========================================================
 
 waveformInfo = nrOFDMInfo(carrier);
@@ -238,216 +283,240 @@ H_perfect = zeros(size(H_prac));
 H_perfect_ori = zeros(size(H_prac));
 
 %% 7. Channel Simulation Loop Over UEs
-for snr_idx = 1:length(SNRdB)
-    nmse_prac     = 0;
-    nmse_ls       = 0;
-    nmse_ls_pilot = 0;
-    nmse_li       = 0;
+if opt.SaveOnlyNPY
+    fprintf('\n=== Fast Mode: Generating ONLY clean channel labels for pyntn (.npy) ===\n');
+    fprintf('  Profile: %s | DelaySpread: %.1f ns | Elev: %.1f deg | Samples: %d\n', ...
+        channel.DelayProfile, channel.DelaySpread * 1e9, simParameters.ElevationAngle, numUE);
     
     for idxUE = 1:numUE
-        % Apply UE-specific Doppler shift residual
         channel.SatelliteDopplerShift = satelliteDopplerShift_bc; 
         
         if channel.RandomStream == "Global stream"
             reset(channel);
         elseif channel.RandomStream == "mt19937ar with seed"
             release(channel);
-            channel.Seed = idxUE + (SNRdB +20)*numUE;
+            channel.Seed = idxUE + 20*numUE;
         end
         
         [rxWaveform2, pathGains] = channel(txWaveform2);
         pathFilters = getPathFilters(channel);
         offset = nrPerfectTimingEstimate(pathGains, pathFilters);
         rxGrid2 = nrOFDMDemodulate(carrier, rxWaveform2(1+offset:end, :));
-        hEstPerfect2 = nrPerfectChannelEstimate(carrier, pathGains, pathFilters, offset);
         
-        % Multiply normalized small-scale fading by position-based linear path loss factor
         pl_i_dB = pl_dB_all(idxUE);
-        H_perfect_n_before = hEstPerfect2 * db2mag(-pl_i_dB);
-        H_perfect_n        = rxGrid2 * db2mag(-pl_i_dB); % H_eff
-        
-        % Simplified transmission
-        rxGrid_pilot = txGrid_pilot .* H_perfect_n;
-        
-        % Add Noise
-        SNR = 10^(SNRdB(snr_idx) / 10);
-        sigPower = mean(abs(rxGrid_pilot(refDMRSIndices)).^2);
-        noisePower = sigPower / SNR;
-        noise = sqrt(noisePower / 2) * (randn(size(rxGrid_pilot)) + 1j * randn(size(rxGrid_pilot)));
-        rxGrid_pilot_noisy = rxGrid_pilot + noise;
-        
-        % LS + Linear Interpolation
-        [H_equalized_n, H_linear_n] = Lin_Interpolate(rxGrid_pilot_noisy, refDMRSIndices, refDMRSSymbols);
-        [H_practical_n, noiseEst] = nrChannelEstimate(carrier, rxGrid_pilot_noisy, ...
-                refDMRSIndices, refDMRSSymbols, 'CDMLengths', pdsch.DMRS.CDMLengths);
-        
-        % Store Channels
-        H_prac(:,:,idxUE) = H_practical_n.';
-        H_li(:,:,idxUE) = H_linear_n.';
-        H_ls_pilots(:,idxUE) = H_equalized_n(refDMRSIndices);
+        H_perfect_n = rxGrid2 * db2mag(-pl_i_dB); % H_eff
         H_perfect(:,:,idxUE) = H_perfect_n.';
-        H_perfect_ori(:,:,idxUE) = H_perfect_n_before.';
         
-        % Full grid NMSEs
-        nmse_prac_n = sum(abs(H_practical_n - H_perfect_n).^2, 'all') / sum(abs(H_perfect_n).^2, 'all');
-        nmse_ls_n   = sum(abs(H_equalized_n - H_perfect_n).^2, 'all') / sum(abs(H_perfect_n).^2, 'all');
-        nmse_li_n   = sum(abs(H_linear_n - H_perfect_n).^2, 'all') / sum(abs(H_perfect_n).^2, 'all');
-        nmse_ls_pilot_n = sum(abs(H_equalized_n(refDMRSIndices) - H_perfect_n(refDMRSIndices)).^2, 'all') / ...
-                          sum(abs(H_perfect_n(refDMRSIndices)).^2, 'all');
-        
-        nmse_prac     = nmse_prac + nmse_prac_n;
-        nmse_ls       = nmse_ls + nmse_ls_n;
-        nmse_ls_pilot = nmse_ls_pilot + nmse_ls_pilot_n;
-        nmse_li       = nmse_li + nmse_li_n;
-    end
-    
-    nmse_prac     = nmse_prac / numUE;
-    nmse_ls       = nmse_ls / numUE;
-    nmse_ls_pilot = nmse_ls_pilot / numUE;
-    nmse_li       = nmse_li / numUE;
-
-    save_folder = fullfile(base_folder, ['SNR_', num2str(SNRdB(snr_idx)), 'dB']);  
-    if ~exist(save_folder, 'dir')
-        mkdir(save_folder);
-    end
-    
-    % Save .mat dataset including full geometry information
-    save(fullfile(save_folder, 'matlabNTN.mat'), ...
-        'H_perfect', ...
-        'H_perfect_ori', ...
-        'H_prac', ...
-        'H_li', ...
-        'H_ls_pilots', ...
-        'pilot_indices', ...
-        'pilot_rows', ...
-        'pilot_cols', ...
-        'nmse_prac', ...
-        'nmse_ls', ...
-        'nmse_ls_pilot', ...
-        'nmse_li', ...
-        'ut_loc_ENU_all', ...
-        'r_ue_ECEF_all', ...
-        'r_sat_ECEF', ...
-        'v_sat_ECEF', ...
-        'bs_loc_ENU', ...
-        'v_sat_ENU', ...
-        'slant_ranges', ...
-        'elevation_angles', ...
-        'pl_dB_all', ...
-        'doppler_shifts_all', ...
-        'satelliteDopplerShift_bc', ...
-        '-v7.3');
-
-    % Save .npy format for pyntn compatibility (shape: (numUE, 132, 14), complex64)
-    saveNPY_channel(fullfile(save_folder, 'H_perfect.npy'), H_perfect, true);
-
-    %% 8. Save Markdown Report with Parameters & Geometry Metadata
-    md_path = fullfile(save_folder, 'simulation_parameters.md');
-    fid = fopen(md_path, 'w');
-    if fid ~= -1
-        fprintf(fid, '# NTN Simulation Parameters (Position-Based Geometry)\n\n');
-        
-        fprintf(fid, '## Orbit & Satellite Parameters\n');
-        fprintf(fid, '- **Carrier Frequency ($f_c$):** %.2f GHz (%g Hz)\n', simParameters.CarrierFrequency / 1e9, simParameters.CarrierFrequency);
-        fprintf(fid, '- **Satellite Altitude:** %.2f km (%g m)\n', simParameters.SatelliteAltitude / 1000, simParameters.SatelliteAltitude);
-        fprintf(fid, '- **Nominal Elevation Angle:** %.2f°\n', simParameters.ElevationAngle);
-        fprintf(fid, '- **Beam Center Doppler Shift:** %.2f Hz\n', satelliteDopplerShift_bc);
-        fprintf(fid, '- **Satellite Speed:** %.2f m/s\n\n', norm(v_sat_ECEF));
-        
-        fprintf(fid, '## Geometry & Beam Footprint\n');
-        fprintf(fid, '- **Beam Footprint Radius:** %.2f km\n', r_beam / 1000);
-        fprintf(fid, '- **Max UE Radius:** %.2f km\n', r_ue_max / 1000);
-        fprintf(fid, '- **Beam Center Reference Location:** Lat %.4f°, Lon %.4f°\n', phi_UE_deg, lambda_UE_deg);
-        fprintf(fid, '- **Elevation Angle Range:** Min %.2f°, Max %.2f°, Mean %.2f°\n', min(elevation_angles), max(elevation_angles), mean(elevation_angles));
-        fprintf(fid, '- **Slant Range Range:** Min %.2f km, Max %.2f km\n', min(slant_ranges)/1000, max(slant_ranges)/1000);
-        fprintf(fid, '- **Path Loss Range:** Min %.2f dB, Max %.2f dB\n\n', min(pl_dB_all), max(pl_dB_all));
-        
-        fprintf(fid, '## Mobile Terminal (UE) Parameters\n');
-        fprintf(fid, '- **Mobile Speed:** %.2f m/s (%.2f km/h)\n', simParameters.MobileSpeed, simParameters.MobileSpeed * 3.6);
-        fprintf(fid, '- **Mobile Antenna Height:** %.2f m\n', simParameters.MobileAltitude);
-        fprintf(fid, '- **Number of UEs ($N_{\\text{UE}}$):** %d\n\n', numUE);
-        
-        fprintf(fid, '## 5G NR Carrier & OFDM Grid\n');
-        fprintf(fid, '- **Resource Blocks ($N_{\\text{grid}}$):** %d RBs (%d Subcarriers)\n', carrier.NSizeGrid, carrier.NSizeGrid * 12);
-        fprintf(fid, '- **Subcarrier Spacing (SCS):** %d kHz\n', carrier.SubcarrierSpacing);
-        fprintf(fid, '- **Cyclic Prefix:** %s\n', carrier.CyclicPrefix);
-        fprintf(fid, '- **Sample Rate:** %.2f MHz (%g Hz)\n\n', simParameters.SampleRate / 1e6, simParameters.SampleRate);
-        
-        fprintf(fid, '## Channel Model & Propagation\n');
-        fprintf(fid, '- **Delay Profile:** %s\n', channel.DelayProfile);
-        fprintf(fid, '- **Delay Spread:** %.2f ns (%g s)\n', channel.DelaySpread * 1e9, channel.DelaySpread);
-        fprintf(fid, '- **Max Mobile Doppler Shift:** %.2f Hz\n', channel.MaximumDopplerShift);
-        fprintf(fid, '- **Antenna Configuration:** %dx%d (Tx x Rx)\n\n', nTxAnts, nRxAnts);
-        
-        fprintf(fid, '## Signal & SNR Configuration\n');
-        fprintf(fid, '- **SNR:** %g dB\n', SNRdB(snr_idx));
-        fprintf(fid, '- **PDSCH Modulation:** %s\n', string(pdsch.Modulation));
-        fprintf(fid, '- **Pilot Symbols:** DM-RS (Type %d, Position %d)\n', pdsch.DMRS.DMRSConfigurationType, pdsch.DMRS.DMRSTypeAPosition);
-        fclose(fid);
-    end
-
-    %% 9. Save OFDM Channel Magnitude PDF Heatmaps (First UE Sample)
-    H_ls_grid_1 = zeros(carrier.NSizeGrid*12, 14);
-    H_ls_grid_1(refDMRSIndices) = H_ls_pilots(:, 1);
-
-    ch_struct = struct( ...
-        'H_perfect_ori', H_perfect_ori(:,:,1).', ...
-        'H_perfect',     H_perfect(:,:,1).', ...
-        'H_prac',        H_prac(:,:,1).', ...
-        'H_li',          H_li(:,:,1).', ...
-        'H_ls',          H_ls_grid_1 ...
-    );
-    
-    ch_names = fieldnames(ch_struct);
-    for k = 1:length(ch_names)
-        ch_name = ch_names{k};
-        fig = figure('Visible', 'off');
-        imagesc(real(ch_struct.(ch_name)));
-        colorbar;
-        set(gca, 'FontSize', 20);
-        xlabel('Symbol', 'FontSize', 25);
-        ylabel('Subcarrier', 'FontSize', 25);
-        
-        pdf_path = fullfile(save_folder, [ch_name, '.pdf']);
-        try
-            exportgraphics(fig, pdf_path, 'ContentType', 'vector');
-        catch
-            saveas(fig, pdf_path);
+        print_step = max(500, floor(numUE / 10));
+        if mod(idxUE, print_step) == 0 || idxUE == numUE
+            fprintf('  Generated %d / %d UE drops (%.1f%%)\n', idxUE, numUE, idxUE/numUE*100);
         end
-        close(fig);
     end
-
-    %% 10. PLOT & SAVE GEOMETRY VISUALIZATION FIGURES
-    % (1) Overhead Zenith Position Geometry (t = 0 s, ~90 deg elevation) for 1 UE
-    % (2) Orbital Pass Timeline & Doppler/Elevation S-Curves
-    
-    % --- (1) Geometry at Overhead Zenith (t = 0 s) for 1 UE ---
-    plot_3d_ecef_geometry(r_sat_ECEF_t0, v_sat_ECEF_t0, r_ue_ECEF_0, r_ue_ECEF_all(:, 1), ...
-        lambda_UE, phi_UE, a_wgs84, r_beam, omega_s, u_mid, Omega_RAAN, inclination, r_orbit, v_sat_orbit, omega_E, ...
-        '3D Geometry Snapshot (ECEF Coordinates)\nOverhead Zenith Peak (t = 0 s, ~90° Elevation)', ...
-        fullfile(save_folder, 'geometry_ecef_t0_overhead.pdf'));
+else
+    for snr_idx = 1:length(SNRdB)
+        nmse_prac     = 0;
+        nmse_ls       = 0;
+        nmse_ls_pilot = 0;
+        nmse_li       = 0;
         
-    plot_3d_enu_geometry(bs_loc_ENU_t0, v_sat_ENU_t0, ut_loc_ENU_all(:, 1), r_beam, ...
-        '3D Geometry (Local Tangent Plane ENU)\nOverhead Zenith Peak (t = 0 s, ~90° Elevation)', ...
-        fullfile(save_folder, 'geometry_enu_t0_overhead.pdf'));
+        for idxUE = 1:numUE
+            % Apply UE-specific Doppler shift residual
+            channel.SatelliteDopplerShift = satelliteDopplerShift_bc; 
+            
+            if channel.RandomStream == "Global stream"
+                reset(channel);
+            elseif channel.RandomStream == "mt19937ar with seed"
+                release(channel);
+                channel.Seed = idxUE + (SNRdB(snr_idx) + 20)*numUE;
+            end
+            
+            [rxWaveform2, pathGains] = channel(txWaveform2);
+            pathFilters = getPathFilters(channel);
+            offset = nrPerfectTimingEstimate(pathGains, pathFilters);
+            rxGrid2 = nrOFDMDemodulate(carrier, rxWaveform2(1+offset:end, :));
+            hEstPerfect2 = nrPerfectChannelEstimate(carrier, pathGains, pathFilters, offset);
+            
+            % Multiply normalized small-scale fading by position-based linear path loss factor
+            pl_i_dB = pl_dB_all(idxUE);
+            H_perfect_n_before = hEstPerfect2 * db2mag(-pl_i_dB);
+            H_perfect_n        = rxGrid2 * db2mag(-pl_i_dB); % H_eff
+            
+            % Simplified transmission
+            rxGrid_pilot = txGrid_pilot .* H_perfect_n;
+            
+            % Add Noise
+            SNR = 10^(SNRdB(snr_idx) / 10);
+            sigPower = mean(abs(rxGrid_pilot(refDMRSIndices)).^2);
+            noisePower = sigPower / SNR;
+            noise = sqrt(noisePower / 2) * (randn(size(rxGrid_pilot)) + 1j * randn(size(rxGrid_pilot)));
+            rxGrid_pilot_noisy = rxGrid_pilot + noise;
+            
+            % LS + Linear Interpolation
+            [H_equalized_n, H_linear_n] = Lin_Interpolate(rxGrid_pilot_noisy, refDMRSIndices, refDMRSSymbols);
+            [H_practical_n, noiseEst] = nrChannelEstimate(carrier, rxGrid_pilot_noisy, ...
+                    refDMRSIndices, refDMRSSymbols, 'CDMLengths', pdsch.DMRS.CDMLengths);
+            
+            % Store Channels
+            H_prac(:,:,idxUE) = H_practical_n.';
+            H_li(:,:,idxUE) = H_linear_n.';
+            H_ls_pilots(:,idxUE) = H_equalized_n(refDMRSIndices);
+            H_perfect(:,:,idxUE) = H_perfect_n.';
+            H_perfect_ori(:,:,idxUE) = H_perfect_n_before.';
+            
+            % Full grid NMSEs
+            nmse_prac_n = sum(abs(H_practical_n - H_perfect_n).^2, 'all') / sum(abs(H_perfect_n).^2, 'all');
+            nmse_ls_n   = sum(abs(H_equalized_n - H_perfect_n).^2, 'all') / sum(abs(H_perfect_n).^2, 'all');
+            nmse_li_n   = sum(abs(H_linear_n - H_perfect_n).^2, 'all') / sum(abs(H_perfect_n).^2, 'all');
+            nmse_ls_pilot_n = sum(abs(H_equalized_n(refDMRSIndices) - H_perfect_n(refDMRSIndices)).^2, 'all') / ...
+                              sum(abs(H_perfect_n(refDMRSIndices)).^2, 'all');
+            
+            nmse_prac     = nmse_prac + nmse_prac_n;
+            nmse_ls       = nmse_ls + nmse_ls_n;
+            nmse_ls_pilot = nmse_ls_pilot + nmse_ls_pilot_n;
+            nmse_li       = nmse_li + nmse_li_n;
+        end
+        
+        nmse_prac     = nmse_prac / numUE;
+        nmse_ls       = nmse_ls / numUE;
+        nmse_ls_pilot = nmse_ls_pilot / numUE;
+        nmse_li       = nmse_li / numUE;
 
-    % --- (2) Orbital Pass Timeline & Doppler / Elevation S-Curves ---
-    plot_doppler_elevation_timeline(t_snapshot, simParameters.ElevationAngle, ...
-        omega_s, u_mid, Omega_RAAN, inclination, r_orbit, v_sat_orbit, omega_E, ...
-        a_wgs84, r_ue_ECEF_0, lambda, simParameters.CarrierFrequency, c, ...
-        fullfile(save_folder, 'geometry_doppler_elevation_pass.pdf'));
+        save_folder = fullfile(base_folder, ['SNR_', num2str(SNRdB(snr_idx)), 'dB']);  
+        if ~exist(save_folder, 'dir')
+            mkdir(save_folder);
+        end
+        
+        if opt.SaveMat
+            % Save .mat dataset including full geometry information
+            save(fullfile(save_folder, 'matlabNTN.mat'), ...
+                'H_perfect', ...
+                'H_perfect_ori', ...
+                'H_prac', ...
+                'H_li', ...
+                'H_ls_pilots', ...
+                'pilot_indices', ...
+                'pilot_rows', ...
+                'pilot_cols', ...
+                'nmse_prac', ...
+                'nmse_ls', ...
+                'nmse_ls_pilot', ...
+                'nmse_li', ...
+                'ut_loc_ENU_all', ...
+                'r_ue_ECEF_all', ...
+                'r_sat_ECEF', ...
+                'v_sat_ECEF', ...
+                'bs_loc_ENU', ...
+                'v_sat_ENU', ...
+                'slant_ranges', ...
+                'elevation_angles', ...
+                'pl_dB_all', ...
+                'doppler_shifts_all', ...
+                'satelliteDopplerShift_bc', ...
+                '-v7.3');
+        end
 
+        if opt.SavePlots
+            %% 8. Save Markdown Report with Parameters & Geometry Metadata
+            md_path = fullfile(save_folder, 'simulation_parameters.md');
+            fid = fopen(md_path, 'w');
+            if fid ~= -1
+                fprintf(fid, '# NTN Simulation Parameters (Position-Based Geometry)\n\n');
+                
+                fprintf(fid, '## Orbit & Satellite Parameters\n');
+                fprintf(fid, '- **Carrier Frequency ($f_c$):** %.2f GHz (%g Hz)\n', simParameters.CarrierFrequency / 1e9, simParameters.CarrierFrequency);
+                fprintf(fid, '- **Satellite Altitude:** %.2f km (%g m)\n', simParameters.SatelliteAltitude / 1000, simParameters.SatelliteAltitude);
+                fprintf(fid, '- **Nominal Elevation Angle:** %.2f°\n', simParameters.ElevationAngle);
+                fprintf(fid, '- **Beam Center Doppler Shift:** %.2f Hz\n', satelliteDopplerShift_bc);
+                fprintf(fid, '- **Satellite Speed:** %.2f m/s\n\n', norm(v_sat_ECEF));
+                
+                fprintf(fid, '## Geometry & Beam Footprint\n');
+                fprintf(fid, '- **Beam Footprint Radius:** %.2f km\n', r_beam / 1000);
+                fprintf(fid, '- **Max UE Radius:** %.2f km\n', r_ue_max / 1000);
+                fprintf(fid, '- **Beam Center Reference Location:** Lat %.4f°, Lon %.4f°\n', phi_UE_deg, lambda_UE_deg);
+                fprintf(fid, '- **Elevation Angle Range:** Min %.2f°, Max %.2f°, Mean %.2f°\n', min(elevation_angles), max(elevation_angles), mean(elevation_angles));
+                fprintf(fid, '- **Slant Range Range:** Min %.2f km, Max %.2f km\n', min(slant_ranges)/1000, max(slant_ranges)/1000);
+                fprintf(fid, '- **Path Loss Range:** Min %.2f dB, Max %.2f dB\n\n', min(pl_dB_all), max(pl_dB_all));
+                
+                fprintf(fid, '## Mobile Terminal (UE) Parameters\n');
+                fprintf(fid, '- **Mobile Speed:** %.2f m/s (%.2f km/h)\n', simParameters.MobileSpeed, simParameters.MobileSpeed * 3.6);
+                fprintf(fid, '- **Mobile Antenna Height:** %.2f m\n', simParameters.MobileAltitude);
+                fprintf(fid, '- **Number of UEs ($N_{\\text{UE}}$):** %d\n\n', numUE);
+                
+                fprintf(fid, '## 5G NR Carrier & OFDM Grid\n');
+                fprintf(fid, '- **Resource Blocks ($N_{\\text{grid}}$):** %d RBs (%d Subcarriers)\n', carrier.NSizeGrid, carrier.NSizeGrid * 12);
+                fprintf(fid, '- **Subcarrier Spacing (SCS):** %d kHz\n', carrier.SubcarrierSpacing);
+                fprintf(fid, '- **Cyclic Prefix:** %s\n', carrier.CyclicPrefix);
+                fprintf(fid, '- **Sample Rate:** %.2f MHz (%g Hz)\n\n', simParameters.SampleRate / 1e6, simParameters.SampleRate);
+                
+                fprintf(fid, '## Channel Model & Propagation\n');
+                fprintf(fid, '- **Delay Profile:** %s\n', channel.DelayProfile);
+                fprintf(fid, '- **Delay Spread:** %.2f ns (%g s)\n', channel.DelaySpread * 1e9, channel.DelaySpread);
+                fprintf(fid, '- **Max Mobile Doppler Shift:** %.2f Hz\n', channel.MaximumDopplerShift);
+                fprintf(fid, '- **Antenna Configuration:** %dx%d (Tx x Rx)\n\n', nTxAnts, nRxAnts);
+                
+                fprintf(fid, '## Signal & SNR Configuration\n');
+                fprintf(fid, '- **SNR:** %g dB\n', SNRdB(snr_idx));
+                fprintf(fid, '- **PDSCH Modulation:** %s\n', string(pdsch.Modulation));
+                fprintf(fid, '- **Pilot Symbols:** DM-RS (Type %d, Position %d)\n', pdsch.DMRS.DMRSConfigurationType, pdsch.DMRS.DMRSTypeAPosition);
+                fclose(fid);
+            end
+
+            %% 9. Save OFDM Channel Magnitude PDF Heatmaps (First UE Sample)
+            H_ls_grid_1 = zeros(carrier.NSizeGrid*12, 14);
+            H_ls_grid_1(refDMRSIndices) = H_ls_pilots(:, 1);
+
+            ch_struct = struct( ...
+                'H_perfect_ori', H_perfect_ori(:,:,1).', ...
+                'H_perfect',     H_perfect(:,:,1).', ...
+                'H_prac',        H_prac(:,:,1).', ...
+                'H_li',          H_li(:,:,1).', ...
+                'H_ls',          H_ls_grid_1 ...
+            );
+            
+            ch_names = fieldnames(ch_struct);
+            for k = 1:length(ch_names)
+                ch_name = ch_names{k};
+                fig = figure('Visible', 'off');
+                imagesc(real(ch_struct.(ch_name)));
+                colorbar;
+                set(gca, 'FontSize', 20);
+                xlabel('Symbol', 'FontSize', 25);
+                ylabel('Subcarrier', 'FontSize', 25);
+                
+                pdf_path = fullfile(save_folder, [ch_name, '.pdf']);
+                try
+                    exportgraphics(fig, pdf_path, 'ContentType', 'vector');
+                catch
+                    saveas(fig, pdf_path);
+                end
+                close(fig);
+            end
+
+            %% 10. PLOT & SAVE GEOMETRY VISUALIZATION FIGURES
+            plot_3d_ecef_geometry(r_sat_ECEF_t0, v_sat_ECEF_t0, r_ue_ECEF_0, r_ue_ECEF_all(:, 1), ...
+                lambda_UE, phi_UE, a_wgs84, r_beam, omega_s, u_mid, Omega_RAAN, inclination, r_orbit, v_sat_orbit, omega_E, ...
+                '3D Geometry Snapshot (ECEF Coordinates)\nOverhead Zenith Peak (t = 0 s, ~90° Elevation)', ...
+                fullfile(save_folder, 'geometry_ecef_t0_overhead.pdf'));
+                
+            plot_3d_enu_geometry(bs_loc_ENU_t0, v_sat_ENU_t0, ut_loc_ENU_all(:, 1), r_beam, ...
+                '3D Geometry (Local Tangent Plane ENU)\nOverhead Zenith Peak (t = 0 s, ~90° Elevation)', ...
+                fullfile(save_folder, 'geometry_enu_t0_overhead.pdf'));
+
+            plot_doppler_elevation_timeline(t_snapshot, simParameters.ElevationAngle, ...
+                omega_s, u_mid, Omega_RAAN, inclination, r_orbit, v_sat_orbit, omega_E, ...
+                a_wgs84, r_ue_ECEF_0, lambda, simParameters.CarrierFrequency, c, ...
+                fullfile(save_folder, 'geometry_doppler_elevation_pass.pdf'));
+        end
+    end
 end
 
-%% 11. SAVE NPY DATASETS FOR DIRECT PYTHON / PYNTN COMPATIBILITY
-fprintf('\n--- Saving .npy files for pyntn compatibility ---\n');
+%% 11. SAVE NPY DATASETS (H_train.npy, H_val.npy, H_test.npy)
+fprintf('\n--- Saving .npy dataset splits (H_train, H_val, H_test) ---\n');
+if ~exist(base_folder, 'dir')
+    mkdir(base_folder);
+end
 
-% 1. Save full H_perfect to base_folder (shape: (numUE, 132, 14), complex64)
-dataset_name = sprintf('%s%s_%se9_%s_%s_%s', profile_str, ds_str, fc_str, alt_str, elev_str, scs_str);
-npy_full_path = fullfile(base_folder, 'H_perfect.npy');
-saveNPY_channel(npy_full_path, H_perfect, true);
-
-% 2. Save 80% / 10% / 10% train, val, test splits for direct use in pyntn.train
+% 80% / 10% / 10% train, val, test splits for direct use in pyntn
 n_train = floor(0.80 * numUE);
 n_val   = floor(0.10 * numUE);
 
@@ -455,14 +524,22 @@ H_train = H_perfect(:, :, 1:n_train);
 H_val   = H_perfect(:, :, n_train+1:n_train+n_val);
 H_test  = H_perfect(:, :, n_train+n_val+1:end);
 
-saveNPY_channel(fullfile(base_folder, [dataset_name, '_train.npy']), H_train, true);
-saveNPY_channel(fullfile(base_folder, [dataset_name, '_val.npy']), H_val, true);
-saveNPY_channel(fullfile(base_folder, [dataset_name, '_test.npy']), H_test, true);
+saveNPY_channel(fullfile(base_folder, 'H_train.npy'), H_train, true);
+saveNPY_channel(fullfile(base_folder, 'H_val.npy'), H_val, true);
+saveNPY_channel(fullfile(base_folder, 'H_test.npy'), H_test, true);
 
-fprintf('Generated pyntn-ready dataset splits:\n');
-fprintf('  Train: %s (%d drops)\n', fullfile(base_folder, [dataset_name, '_train.npy']), size(H_train, 3));
-fprintf('  Val:   %s (%d drops)\n', fullfile(base_folder, [dataset_name, '_val.npy']), size(H_val, 3));
-fprintf('  Test:  %s (%d drops)\n', fullfile(base_folder, [dataset_name, '_test.npy']), size(H_test, 3));
+fprintf('Generated pyntn-ready dataset splits in %s:\n', base_folder);
+fprintf('  Train: H_train.npy (%d drops)\n', size(H_train, 3));
+fprintf('  Val:   H_val.npy   (%d drops)\n', size(H_val, 3));
+fprintf('  Test:  H_test.npy  (%d drops)\n', size(H_test, 3));
+
+%% 12. Save note.md Overview in base_folder
+save_dataset_note_md(base_folder, channel.DelayProfile, channel.DelaySpread, ...
+    simParameters.CarrierFrequency, carrier.SubcarrierSpacing, simParameters.SatelliteAltitude, ...
+    simParameters.ElevationAngle, simParameters.MobileSpeed, carrier.NSizeGrid, ...
+    size(H_train, 3), size(H_val, 3), size(H_test, 3));
+
+end % end function Gen_Chan_sampleWise_wGeometry
 
 %% =========================================================================
 %% HELPER FUNCTIONS FOR GEOMETRY CALCULATIONS AND PLOTTING
@@ -739,6 +816,12 @@ interleaved = zeros(2, num_elem, 'single');
 interleaved(1, :) = single(real(H(:)));
 interleaved(2, :) = single(imag(H(:)));
 
+% Ensure parent folder exists
+folder_out = fileparts(filename);
+if ~isempty(folder_out) && ~exist(folder_out, 'dir')
+    mkdir(folder_out);
+end
+
 fid = fopen(filename, 'wb');
 if fid == -1
     error('Could not open file for writing: %s', filename);
@@ -752,4 +835,47 @@ fwrite(fid, interleaved, 'single');
 fclose(fid);
 fprintf('Saved NPY channel: %s [shape=(%d, %d, %d), complex64]\n', ...
     filename, n_samples, n_sc, n_sym);
+end
+
+function save_dataset_note_md(folder, profile, delay_spread, fc, scs, altitude, elevation, speed, n_rb, n_tr, n_va, n_te)
+    md_file = fullfile(folder, 'note.md');
+    fid = fopen(md_file, 'w');
+    if fid == -1
+        return;
+    end
+    
+    if contains(profile, 'C') || contains(profile, 'D')
+        los_str = 'LOS (Ricean)';
+    else
+        los_str = 'NLOS (Rayleigh)';
+    end
+    
+    fprintf(fid, '# Dataset Overview: %s (%.2f GHz, %d km, %g°, %d kHz)\n\n', ...
+        profile, fc / 1e9, round(altitude / 1000), elevation, scs);
+    fprintf(fid, '## General Information\n\n');
+    fprintf(fid, '- **Channel Model:** %s (%s)\n', profile, los_str);
+    fprintf(fid, '- **Data Generator:** MATLAB 5G Toolbox\n');
+    fprintf(fid, '- **Total Samples:** %d drops (Train: %d, Val: %d, Test: %d)\n', ...
+        n_tr + n_va + n_te, n_tr, n_va, n_te);
+    fprintf(fid, '- **Available Files:** `H_train.npy` (%d), `H_val.npy` (%d), `H_test.npy` (%d)\n', ...
+        n_tr, n_va, n_te);
+    fprintf(fid, '- **Data Type:** `complex64`, shape `(N, 132, 14)`\n');
+    fprintf(fid, '- **Power Normalization:** Sample-wise RMS unit power ($\\mathbb{E}[|H|^2] = 1.0$)\n\n');
+    fprintf(fid, '---\n\n');
+    fprintf(fid, '## Configuration Summary\n\n');
+    fprintf(fid, '| Parameter | Value |\n');
+    fprintf(fid, '| :--- | :--- |\n');
+    fprintf(fid, '| **Environment / Scenario** | Urban Expressway |\n');
+    fprintf(fid, '| **Carrier Frequency ($f_c$)** | %.2f GHz |\n', fc / 1e9);
+    fprintf(fid, '| **Subcarrier Spacing (SCS)** | %d kHz |\n', scs);
+    fprintf(fid, '| **OFDM Grid Size** | %d RBs (%d Subcarriers × 14 Symbols) |\n', n_rb, n_rb * 12);
+    fprintf(fid, '| **UE Velocity** | [%g, %g] m/s |\n', max(0, speed - 10), speed);
+    fprintf(fid, '| **Satellite Altitude** | %d km |\n', round(altitude / 1000));
+    fprintf(fid, '| **Nominal Elevation Angle** | %g° |\n', elevation);
+    fprintf(fid, '| **Delay Spread** | %.0f ns |\n', delay_spread * 1e9);
+    fprintf(fid, '| **Antenna Configuration** | 1 × 1 (SISO) |\n');
+    fprintf(fid, '| **Pilot Configuration (DM-RS)** | **5G NR DM-RS Type 2, Port 1:**<br>• **Frequency Allocation:** Subcarriers port 1 (`[0, 1, 6, 7]`) per RB (44 pilots/symbol across 11 RBs)<br>• **Time Allocation:** Mapping Type A, Pos 2 (OFDM symbols 2 and 11, 0-indexed)<br>• **Total Pilot REs:** 88 REs per slot |\n');
+    
+    fclose(fid);
+    fprintf('Saved dataset documentation: %s\n', md_file);
 end
