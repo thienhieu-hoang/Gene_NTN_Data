@@ -1,10 +1,25 @@
 import os
 import sys
+import argparse
 import tensorflow as tf
 import numpy as np
 from scipy.io import savemat
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
+
+# Parse Command-Line Arguments
+parser = argparse.ArgumentParser(description="Generate 3D NTN channel realizations using OpenNTN/Sionna.")
+parser.add_argument("--samples", type=int, default=2048, help="Total number of UE channel drops to generate")
+parser.add_argument("--batch-size", type=int, default=32, help="Batch size for channel generation")
+parser.add_argument("--save-only-npy", action="store_true", default=False, help="Fast mode: generate ONLY clean channel labels and save .npy splits")
+parser.add_argument("--scenario", type=str, default="dur", choices=["dur", "sur", "urb"], help="NTN environment scenario")
+parser.add_argument("--carrier-frequency", type=float, default=2.18e9, help="Carrier frequency in Hz")
+parser.add_argument("--elevation", type=float, default=30.0, help="Target elevation angle in degrees")
+parser.add_argument("--delay-spread", type=float, default=300.0, help="Custom delay spread in ns")
+parser.add_argument("--los", type=str, default="nlos", choices=["los", "nlos", "mixed"], help="Propagation condition")
+parser.add_argument("--fix-delay-spread", action="store_true", default=True, help="Fix delay spread value exactly")
+parser.add_argument("--snr", type=float, default=15.0, help="SNR in dB for LS estimation evaluation")
+args, unknown = parser.parse_known_args()
 
 # Configure the system to use only a single GPU and allocate memory dynamically
 gpu_num = 0 # Use "" to use the CPU
@@ -39,34 +54,30 @@ SPEED_OF_LIGHT = 299792458.0
 # ========================== Simulation Variables ==========================
 
 satellite_height = 600000.0  # LEO Orbit altitude (m) (600 km)
-scenario = "dur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
-LoS = False                  # True: only LoS | False: only NLoS | None (or ""): 3GPP probabilistic (mixed)
-carrier_frequency = 2.18e9     # DL carrier frequency (Hz)
-SCS = 30e3
-delay_spread_ns_custom = 300 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
-fix_delay_spread = True               # True to fix the delay spread value exactly; False to sample with standard variance
-dense_pilot = False                   # False (default) to use sparse pilots (88 pilots); True for dense pilots (264 pilots)
-pilot_position_port = 1            # For sparse pilots (dense_pilot=False):
-                                      # 1: subcarrier mod 6 in {0, 1}
-                                      # 2: subcarrier mod 6 in {2, 3}
-                                      # 3: subcarrier mod 6 in {4, 5}
-                                      # saved as port1, port2, port3
-typeAposition = 2   # 2: [2, 11] 
-                    # 3: [3, 11] - saved as Apos2, Apos3
-
-# Resolve LoS flag and directory tag
-if LoS is True:
+scenario = args.scenario     # dur (Dense Urban), sur (SubUrban), urb (Urban)
+if args.los == "los":
+    LoS = True
     los_setting = True
     los_suffix = "_LoS"
     los_desc_str = "Only LoS (Line-of-Sight, Rician Fading)"
-elif LoS is False:
+elif args.los == "nlos":
+    LoS = False
     los_setting = False
     los_suffix = "_NLoS"
     los_desc_str = "Only NLoS (Non-Line-of-Sight, Rayleigh Fading)"
 else:
+    LoS = None
     los_setting = None
     los_suffix = ""
     los_desc_str = "3GPP Probabilistic (Mixed LoS/NLoS per Table 6.6.1-1)"
+
+carrier_frequency = args.carrier_frequency  # DL carrier frequency (Hz)
+SCS = 30e3
+delay_spread_ns_custom = args.delay_spread  # Custom delay spread in ns (e.g. 100.0)
+fix_delay_spread = args.fix_delay_spread    # True to fix the delay spread value exactly
+dense_pilot = False                         # False (default) to use sparse pilots (88 pilots)
+pilot_position_port = 1
+typeAposition = 2
 
 if typeAposition == 2:
     pilot_ofdm_symbol_indices = [2, 11]
@@ -75,21 +86,12 @@ elif typeAposition == 3:
 else:
     raise ValueError(f"Invalid typeAposition: {typeAposition}. Must be 2 or 3.")
 
-# satellite_height = 600000.0  # LEO Orbit altitude (m) (600 km)
-# scenario = "dur"             # dur (Dense Urban), sur (SubUrban), urb (Urban)
-# carrier_frequency = 20e9     # DL carrier frequency (Hz)
-# SCS = 120e3
-# delay_spread_ns_custom = 100 #None    # Custom delay spread in ns (e.g. 100.0) or None for standard 3GPP defaults
-
 v_min, v_max = 20.0, 30.0        # UE ground speed in m/s
-
-# Total samples to generate (N_samples)
-N_samples = 2048
-batch_size = 32 #32
-# Target Elevation Angle Configuration (e.g. 20, 30, 40, 50, 60, 70, 80, 90 deg, or None for peak 90 deg)
-target_elevation_angle = 30.0   # Desired nominal elevation angle in degrees (e.g. 50.0)
-
-SNR_dB = 15
+N_samples = args.samples
+batch_size = args.batch_size
+target_elevation_angle = args.elevation
+SNR_dB = args.snr
+save_only_npy = args.save_only_npy
 
 # =========================================================================
 
@@ -472,6 +474,27 @@ for b in range(num_batches):
     # Unique iteration seed for this batch, ensuring alignment of full and comp
     iteration_seed = channel_seed + b
     
+    if save_only_npy:
+        # Fast mode: Directly compute Precompensated Channel only
+        channel_model._scenario._requested_los = los_setting
+        channel_model.set_topology(ut_loc_tensor, bs_loc_tensor, ut_orientations, bs_orientations,
+                                   ut_velocities_tensor, tf.zeros_like(bs_velocities_tensor), in_state, los=los_setting)
+        channel_model._scenario._doppler_mode = 'precompensated'
+        channel_model._scenario.set_beam_center(tf.zeros([current_batch_size, 3], dtype=tf.float32))
+        
+        tf.random.set_seed(iteration_seed)
+        path_coefficients_comp, path_delays_comp = channel_model(num_time_steps, sampling_frequency)
+        
+        tf.random.set_seed(iteration_seed)
+        H_full_comp = ofdm_channel()
+        h_extracted_comp_ = remove_nulled(H_full_comp)
+        H_extracted_comp = h_extracted_comp_[:, 0, 0, 0, 0, :, :].numpy()  # shape [current_batch_size, 14, 132]
+        H_extracted_comp_list.append(H_extracted_comp)
+
+        if (b + 1) % max(1, num_batches // 10) == 0 or (b + 1) == num_batches:
+            print(f"  Generated {end_idx:,} / {N_samples:,} drops ({(b + 1) / num_batches * 100:.1f}%)")
+        continue
+
     # ------------------ Part 1: Full/Uncompensated Channel ------------------
     channel_model._scenario._doppler_mode = 'full'
     tf.random.set_seed(iteration_seed)
@@ -782,104 +805,162 @@ for b in range(num_batches):
             print(f"Warning: Could not save channel plots. Error: {ex}")
 
 # Concatenate all batched results
-H_extracted_ori_all = np.concatenate(H_extracted_ori_list, axis=0)
-H_extracted_comp_all = np.concatenate(H_extracted_comp_list, axis=0)
-H_LS_ori_all = np.concatenate(H_LS_ori_list, axis=0)
-H_LS_comp_all = np.concatenate(H_LS_comp_list, axis=0)
-H_interp_ori_all = np.concatenate(H_interp_ori_list, axis=0)
-H_interp_comp_all = np.concatenate(H_interp_comp_list, axis=0)
+if save_only_npy:
+    H_extracted_comp_all = np.concatenate(H_extracted_comp_list, axis=0)
+else:
+    H_extracted_ori_all = np.concatenate(H_extracted_ori_list, axis=0)
+    H_extracted_comp_all = np.concatenate(H_extracted_comp_list, axis=0)
+    H_LS_ori_all = np.concatenate(H_LS_ori_list, axis=0)
+    H_LS_comp_all = np.concatenate(H_LS_comp_list, axis=0)
+    H_interp_ori_all = np.concatenate(H_interp_ori_list, axis=0)
+    H_interp_comp_all = np.concatenate(H_interp_comp_list, axis=0)
 
-# Convert channel grids to MATLAB shape [14, 132, N_samples]
-H_perfect = np.transpose(H_extracted_comp_all, (1, 2, 0))        # [14, 132, N_samples] (Compensated)
-H_perfect_ori = np.transpose(H_extracted_ori_all, (1, 2, 0))    # [14, 132, N_samples] (Uncompensated)
-H_prac = np.array([], dtype=np.complex64)                       # Empty matrix to save storage space
-H_li = np.transpose(H_interp_comp_all, (1, 2, 0))               # [14, 132, N_samples] (LS+LI on Compensated)
-H_li_ori = np.transpose(H_interp_ori_all, (1, 2, 0))             # [14, 132, N_samples] (LS+LI on Uncompensated)
-H_ls_pilots = np.transpose(H_LS_comp_all, (1, 0))               # [numPilots, N_samples] (Compensated)
-H_ls_pilots_ori = np.transpose(H_LS_ori_all, (1, 0))             # [numPilots, N_samples] (Uncompensated)
+    # Convert channel grids to MATLAB shape [14, 132, N_samples]
+    H_perfect = np.transpose(H_extracted_comp_all, (1, 2, 0))        # [14, 132, N_samples] (Compensated)
+    H_perfect_ori = np.transpose(H_extracted_ori_all, (1, 2, 0))    # [14, 132, N_samples] (Uncompensated)
+    H_prac = np.array([], dtype=np.complex64)                       # Empty matrix to save storage space
+    H_li = np.transpose(H_interp_comp_all, (1, 2, 0))               # [14, 132, N_samples] (LS+LI on Compensated)
+    H_li_ori = np.transpose(H_interp_ori_all, (1, 2, 0))             # [14, 132, N_samples] (LS+LI on Uncompensated)
+    H_ls_pilots = np.transpose(H_LS_comp_all, (1, 0))               # [numPilots, N_samples] (Compensated)
+    H_ls_pilots_ori = np.transpose(H_LS_ori_all, (1, 0))             # [numPilots, N_samples] (Uncompensated)
 
-# Pilot positions (MATLAB style: 1-indexed)
-pilot_rows = pilot_subcarriers + 1
-pilot_cols = pilot_symbols + 1
+    # Pilot positions (MATLAB style: 1-indexed)
+    pilot_rows = pilot_subcarriers + 1
+    pilot_cols = pilot_symbols + 1
 
-# Convert NMSE lists to arrays, and average SSIM lists to scalars
-nmse_ls = np.array(nmse_ls_list)
-nmse_ls_pilot = np.array(nmse_ls_pilot_list)
-nmse_li = np.array(nmse_li_list)
-nmse_li_ori = np.array(nmse_li_ori_list)
-ssim_ls = float(np.mean(ssim_ls_list)) if len(ssim_ls_list) > 0 else 0.0
-ssim_li = float(np.mean(ssim_li_list)) if len(ssim_li_list) > 0 else 0.0
-ssim_li_ori = float(np.mean(ssim_li_ori_list)) if len(ssim_li_ori_list) > 0 else 0.0
+    # Convert NMSE lists to arrays, and average SSIM lists to scalars
+    nmse_ls = np.array(nmse_ls_list)
+    nmse_ls_pilot = np.array(nmse_ls_pilot_list)
+    nmse_li = np.array(nmse_li_list)
+    nmse_li_ori = np.array(nmse_li_ori_list)
+    ssim_ls = float(np.mean(ssim_ls_list)) if len(ssim_ls_list) > 0 else 0.0
+    ssim_li = float(np.mean(ssim_li_list)) if len(ssim_li_list) > 0 else 0.0
+    ssim_li_ori = float(np.mean(ssim_li_ori_list)) if len(ssim_li_ori_list) > 0 else 0.0
 
-# Calculate nominal common Doppler shift at the beam center (ENU [0,0,0])
-lambda_0 = SPEED_OF_LIGHT / carrier_frequency
-v_los_bc = -bs_loc_ENU
-u_los_bc = v_los_bc / np.linalg.norm(v_los_bc)
-doppler_sat_bc = np.dot(v_sat_ENU, u_los_bc) / lambda_0
-print(f"Calculated Doppler shift at beam center: {doppler_sat_bc:.2f} Hz")
+    # Calculate nominal common Doppler shift at the beam center (ENU [0,0,0])
+    lambda_0 = SPEED_OF_LIGHT / carrier_frequency
+    v_los_bc = -bs_loc_ENU
+    u_los_bc = v_los_bc / np.linalg.norm(v_los_bc)
+    doppler_sat_bc = np.dot(v_sat_ENU, u_los_bc) / lambda_0
+    print(f"Calculated Doppler shift at beam center: {doppler_sat_bc:.2f} Hz")
 
-# Save .mat file
-mat_filename = os.path.join(output_dir, f"channel_{scenario}_randomizedUE.mat")
-mat_data = {
-    # Main requested MATLAB matrices
-    "H_perfect": H_perfect,
-    "H_perfect_ori": H_perfect_ori,
-    "H_prac": H_prac,
-    "H_li": H_li,
-    "H_li_ori": H_li_ori,
-    "H_ls_pilots": H_ls_pilots,
-    "H_ls_pilots_ori": H_ls_pilots_ori,
-    "pilot_rows": pilot_rows,
-    "pilot_cols": pilot_cols,
-    "nmse_ls": nmse_ls,
-    "nmse_ls_pilot": nmse_ls_pilot,
-    "nmse_li": nmse_li,
-    "nmse_li_ori": nmse_li_ori,
-    "ssim_ls": ssim_ls,
-    "ssim_li": ssim_li,
-    "ssim_li_ori": ssim_li_ori,
-    "doppler_sat_bc": doppler_sat_bc,
-    
-    # Metadata and other parameters
-    "pilot_symbols": pilot_symbols + 1,       
-    "pilot_subcarriers": pilot_subcarriers + 1, 
-    "pilot_position_port": pilot_position_port if not dense_pilot else 0,
-    "typeAposition": typeAposition,
-    "pilot_ofdm_symbol_indices": np.array(pilot_ofdm_symbol_indices),
-    "ut_loc_ENU": ut_loc_ENU_all,       
-    "ut_velocity_ENU": ut_velocity_ENU_all, 
-    "bs_loc_ENU": bs_loc_ENU,
-    "bs_velocity_ENU": v_sat_ENU,
-    "sat_speed": float(sat_speed)
-}
-savemat(mat_filename, mat_data)
-print(f"Successfully saved batched randomized channel data of {N_samples} samples to {mat_filename}")
+    # Save .mat file
+    mat_filename = os.path.join(output_dir, f"channel_{scenario}_randomizedUE.mat")
+    mat_data = {
+        # Main requested MATLAB matrices
+        "H_perfect": H_perfect,
+        "H_perfect_ori": H_perfect_ori,
+        "H_prac": H_prac,
+        "H_li": H_li,
+        "H_li_ori": H_li_ori,
+        "H_ls_pilots": H_ls_pilots,
+        "H_ls_pilots_ori": H_ls_pilots_ori,
+        "pilot_rows": pilot_rows,
+        "pilot_cols": pilot_cols,
+        "nmse_ls": nmse_ls,
+        "nmse_ls_pilot": nmse_ls_pilot,
+        "nmse_li": nmse_li,
+        "nmse_li_ori": nmse_li_ori,
+        "ssim_ls": ssim_ls,
+        "ssim_li": ssim_li,
+        "ssim_li_ori": ssim_li_ori,
+        "doppler_sat_bc": doppler_sat_bc,
+        
+        # Metadata and other parameters
+        "pilot_symbols": pilot_symbols + 1,       
+        "pilot_subcarriers": pilot_subcarriers + 1, 
+        "pilot_position_port": pilot_position_port if not dense_pilot else 0,
+        "typeAposition": typeAposition,
+        "pilot_ofdm_symbol_indices": np.array(pilot_ofdm_symbol_indices),
+        "ut_loc_ENU": ut_loc_ENU_all,       
+        "ut_velocity_ENU": ut_velocity_ENU_all, 
+        "bs_loc_ENU": bs_loc_ENU,
+        "bs_velocity_ENU": v_sat_ENU,
+        "sat_speed": float(sat_speed)
+    }
+    savemat(mat_filename, mat_data)
+    print(f"Successfully saved batched randomized channel data of {N_samples} samples to {mat_filename}")
 
 # =========================================================================
 # Save .npy format for pyntn compatibility (shape: (N_samples, 132, 14), complex64)
 # =========================================================================
 # Transpose from (N_samples, 14 symbols, 132 subcarriers) -> (N_samples, 132, 14)
+# Original channel power preserved (no normalization)
 H_npy = np.transpose(H_extracted_comp_all, (0, 2, 1)).astype(np.complex64)
 
-# Sample-wise RMS power normalization for pyntn compatibility (E[|H|^2] = 1.0 per slot)
-pwr = np.mean(np.abs(H_npy)**2, axis=(1, 2), keepdims=True)
-H_npy_norm = H_npy / np.sqrt(np.clip(pwr, 1e-30, None))
+setting_base_dir = os.path.dirname(output_dir) if not save_only_npy else os.path.join(script_dir, "results", setting_dir)
+os.makedirs(setting_base_dir, exist_ok=True)
+
+n_train = int(0.80 * N_samples)
+n_val = int(0.10 * N_samples)
+
+if save_only_npy:
+    # Remove old H_perfect.npy or long-name files
+    for old_f in ["H_perfect.npy", f"{setting_dir}_train.npy", f"{setting_dir}_val.npy", f"{setting_dir}_test.npy"]:
+        old_path = os.path.join(setting_base_dir, old_f)
+        if os.path.exists(old_path):
+            try:
+                os.remove(old_path)
+            except OSError:
+                pass
+
+    np.save(os.path.join(setting_base_dir, "H_train.npy"), H_npy[:n_train])
+    np.save(os.path.join(setting_base_dir, "H_val.npy"), H_npy[n_train:n_train + n_val])
+    np.save(os.path.join(setting_base_dir, "H_test.npy"), H_npy[n_train + n_val:])
+    print(f"\nSuccessfully saved pyntn splits (raw channel power) in {setting_base_dir}:")
+    print(f"  Train: H_train.npy ({n_train:,} drops) shape={H_npy[:n_train].shape}")
+    print(f"  Val:   H_val.npy   ({n_val:,} drops) shape={H_npy[n_train:n_train + n_val].shape}")
+    print(f"  Test:  H_test.npy  ({N_samples - n_train - n_val:,} drops) shape={H_npy[n_train + n_val:].shape}")
+
+    # Save note.md
+    note_md_path = os.path.join(setting_base_dir, "note.md")
+    los_type_str = "LOS (Ricean)" if los_setting is True else ("NLOS (Rayleigh)" if los_setting is False else "3GPP Probabilistic")
+    note_lines = [
+        f"# Dataset Overview: OpenNTN {scenario.upper()} ({carrier_frequency / 1e9:.2f} GHz, {int(satellite_height/1000)} km, {target_elevation_angle:.0f}°, {int(SCS/1e3)} kHz)\n",
+        "## General Information\n",
+        f"- **Channel Model:** 3GPP TR 38.811 Dense Urban ({scenario.upper()}) ({los_type_str})",
+        "- **Data Generator:** OpenNTN (3GPP TR 38.811 Statistical / Stochastic Channel Model based on Sionna)",
+        f"- **Benchmark Role:** NLoS Target Domain (matches Sionna {scenario.upper()}{int(delay_spread_ns_custom) if delay_spread_ns_custom else ''})",
+        f"- **Total Samples:** {N_samples:,} drops (Train: {n_train:,}, Val: {n_val:,}, Test: {N_samples - n_train - n_val:,})",
+        f"- **Available Files:** `H_train.npy` ({n_train:,}), `H_val.npy` ({n_val:,}), `H_test.npy` ({N_samples - n_train - n_val:,})",
+        "- **Data Type:** `complex64`, shape `(N, 132, 14)`",
+        "- **Power Normalization:** Raw unnormalized channel power (original physical channel scale preserved)\n",
+        "---\n",
+        "## Configuration Summary\n",
+        "| Parameter | Value |",
+        "| :--- | :--- |",
+        f"| **Environment / Scenario** | Urban Expressway ({scenario.upper()}, {los_suffix.strip('_')}) |",
+        f"| **Carrier Frequency ($f_c$)** | {carrier_frequency / 1e9:.2f} GHz |",
+        f"| **Subcarrier Spacing (SCS)** | {int(SCS/1e3)} kHz |",
+        "| **OFDM Grid Size** | 11 RBs (132 Subcarriers × 14 Symbols) |",
+        f"| **UE Velocity** | [{v_min:.0f}, {v_max:.0f}] m/s |",
+        f"| **Satellite Altitude** | {int(satellite_height/1000)} km |",
+        f"| **Nominal Elevation Angle** | {target_elevation_angle:.0f}° |",
+        f"| **Delay Spread** | {delay_spread_ns_custom:.0f} ns |",
+        "| **Antenna Configuration** | 1 × 1 (SISO) |",
+        "| **Pilot Configuration (DM-RS)** | **5G NR DM-RS Type 2, Port 1:**<br>• **Frequency Allocation:** Subcarriers port 1 (`[0, 1, 6, 7]`) per RB (44 pilots/symbol across 11 RBs)<br>• **Time Allocation:** Mapping Type A, Pos 2 (OFDM symbols 2 and 11, 0-indexed)<br>• **Total Pilot REs:** 88 REs per slot |\n"
+    ]
+    with open(note_md_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(note_lines))
+    print(f"Saved dataset documentation: {note_md_path}")
+    print("Done (save_only_npy=True). Exiting.")
+    sys.exit(0)
 
 # 1. Save in the current SNR folder
 npy_snr_path = os.path.join(output_dir, "H_perfect.npy")
-np.save(npy_snr_path, H_npy_norm)
-print(f"Successfully saved pyntn-compatible NPY channel to {npy_snr_path} [shape={H_npy_norm.shape}]")
+np.save(npy_snr_path, H_npy)
+print(f"Successfully saved pyntn-compatible NPY channel to {npy_snr_path} [shape={H_npy.shape}]")
 
 # 2. Save in parent setting folder (with train/val/test splits for direct use in pyntn.train)
 setting_base_dir = os.path.dirname(output_dir)
 os.makedirs(setting_base_dir, exist_ok=True)
-np.save(os.path.join(setting_base_dir, "H_perfect.npy"), H_npy_norm)
+np.save(os.path.join(setting_base_dir, "H_perfect.npy"), H_npy)
 
 n_train = int(0.80 * N_samples)
 n_val = int(0.10 * N_samples)
-np.save(os.path.join(setting_base_dir, f"{setting_dir}_train.npy"), H_npy_norm[:n_train])
-np.save(os.path.join(setting_base_dir, f"{setting_dir}_val.npy"), H_npy_norm[n_train:n_train + n_val])
-np.save(os.path.join(setting_base_dir, f"{setting_dir}_test.npy"), H_npy_norm[n_train + n_val:])
+np.save(os.path.join(setting_base_dir, f"{setting_dir}_train.npy"), H_npy[:n_train])
+np.save(os.path.join(setting_base_dir, f"{setting_dir}_val.npy"), H_npy[n_train:n_train + n_val])
+np.save(os.path.join(setting_base_dir, f"{setting_dir}_test.npy"), H_npy[n_train + n_val:])
 print(f"Successfully saved pyntn splits in {setting_base_dir} (train: {n_train}, val: {n_val}, test: {N_samples - n_train - n_val})")
 
 # Save scenario parameters documentation

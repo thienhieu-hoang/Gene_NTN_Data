@@ -524,9 +524,9 @@ H_train = H_perfect(:, :, 1:n_train);
 H_val   = H_perfect(:, :, n_train+1:n_train+n_val);
 H_test  = H_perfect(:, :, n_train+n_val+1:end);
 
-saveNPY_channel(fullfile(base_folder, 'H_train.npy'), H_train, true);
-saveNPY_channel(fullfile(base_folder, 'H_val.npy'), H_val, true);
-saveNPY_channel(fullfile(base_folder, 'H_test.npy'), H_test, true);
+saveNPY_channel(fullfile(base_folder, 'H_train.npy'), H_train, false);
+saveNPY_channel(fullfile(base_folder, 'H_val.npy'), H_val, false);
+saveNPY_channel(fullfile(base_folder, 'H_test.npy'), H_test, false);
 
 fprintf('Generated pyntn-ready dataset splits in %s:\n', base_folder);
 fprintf('  Train: H_train.npy (%d drops)\n', size(H_train, 3));
@@ -860,7 +860,7 @@ function save_dataset_note_md(folder, profile, delay_spread, fc, scs, altitude, 
     fprintf(fid, '- **Available Files:** `H_train.npy` (%d), `H_val.npy` (%d), `H_test.npy` (%d)\n', ...
         n_tr, n_va, n_te);
     fprintf(fid, '- **Data Type:** `complex64`, shape `(N, 132, 14)`\n');
-    fprintf(fid, '- **Power Normalization:** Sample-wise RMS unit power ($\\mathbb{E}[|H|^2] = 1.0$)\n\n');
+    fprintf(fid, '- **Power Normalization:** Raw unnormalized channel power (original physical channel scale preserved)\n\n');
     fprintf(fid, '---\n\n');
     fprintf(fid, '## Configuration Summary\n\n');
     fprintf(fid, '| Parameter | Value |\n');

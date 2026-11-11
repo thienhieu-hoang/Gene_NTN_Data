@@ -4,11 +4,10 @@
 
 - **Channel Model:** NTN-TDL-C (LOS (Ricean))
 - **Data Generator:** MATLAB 5G Toolbox
-- **Benchmark Role:** Rural / Open-area clear-sky LoS
-- **Total Samples:** 20,000 drops (Train: 16,000, Val: 2,000, Test: 2,000)
-- **Available Files:** `H_train.npy` (16,000), `H_val.npy` (2,000), `H_test.npy` (2,000)
+- **Total Samples:** 20000 drops (Train: 16000, Val: 2000, Test: 2000)
+- **Available Files:** `H_train.npy` (16000), `H_val.npy` (2000), `H_test.npy` (2000)
 - **Data Type:** `complex64`, shape `(N, 132, 14)`
-- **Power Normalization:** Sample-wise RMS unit power ($\mathbb{E}[|H|^2] = 1.0$)
+- **Power Normalization:** Raw unnormalized channel power (original physical channel scale preserved)
 
 ---
 

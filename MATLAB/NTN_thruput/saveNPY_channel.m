@@ -4,14 +4,14 @@ function saveNPY_channel(filename, H, normalize_rms)
 % Inputs:
 %   filename      - Full path to output .npy file (e.g. 'H_perfect.npy' or 'dataset_train.npy')
 %   H             - Complex channel matrix of size [14, 132, numUE] (symbols x subcarriers x UEs)
-%   normalize_rms - (Optional) Boolean. If true (default), normalizes each UE slot
-%                   to unit average power (E[|H|^2] = 1.0) so it matches pyntn/train.py.
+%   normalize_rms - (Optional) Boolean. Defaults to false to preserve raw channel power.
+%                   If set to true, normalizes each UE slot to unit power (E[|H|^2] = 1.0).
 %
 % Output in Python:
 %   Array with shape (numUE, 132, 14), dtype=complex64, C-contiguous order.
 
 if nargin < 3
-    normalize_rms = true;
+    normalize_rms = false;
 end
 
 % Check dimensions

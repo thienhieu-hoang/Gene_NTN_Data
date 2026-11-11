@@ -1,0 +1,169 @@
+====================================================================
+Starting Batch Generation of 6 NTN Datasets (20,000 samples each)
+====================================================================
+
+>>> [1/6] Generating: NTN-TDL-C | DelaySpread: 300 ns | Elev: 30 deg
+    Role: LoS Target Domain (pyntn target benchmark)
+
+=== Fast Mode: Generating ONLY clean channel labels for pyntn (.npy) ===
+  Profile: NTN-TDL-C | DelaySpread: 300.0 ns | Elev: 30.0 deg | Samples: 20000
+  Generated 2000 / 20000 UE drops (10.0%)
+  Generated 4000 / 20000 UE drops (20.0%)
+  Generated 6000 / 20000 UE drops (30.0%)
+  Generated 8000 / 20000 UE drops (40.0%)
+  Generated 10000 / 20000 UE drops (50.0%)
+  Generated 12000 / 20000 UE drops (60.0%)
+  Generated 14000 / 20000 UE drops (70.0%)
+  Generated 16000 / 20000 UE drops (80.0%)
+  Generated 18000 / 20000 UE drops (90.0%)
+  Generated 20000 / 20000 UE drops (100.0%)
+
+--- Saving .npy dataset splits (H_train, H_val, H_test) ---
+Saved NPY channel: generatedChannel_Results\C300_2p18e9_600km_30deg_30kHz\H_train.npy [shape=(16000, 132, 14), complex64]
+Saved NPY channel: generatedChannel_Results\C300_2p18e9_600km_30deg_30kHz\H_val.npy [shape=(2000, 132, 14), complex64]
+Saved NPY channel: generatedChannel_Results\C300_2p18e9_600km_30deg_30kHz\H_test.npy [shape=(2000, 132, 14), complex64]
+Generated pyntn-ready dataset splits in generatedChannel_Results/C300_2p18e9_600km_30deg_30kHz:
+  Train: H_train.npy (16000 drops)
+  Val:   H_val.npy   (2000 drops)
+  Test:  H_test.npy  (2000 drops)
+Saved dataset documentation: generatedChannel_Results\C300_2p18e9_600km_30deg_30kHz\note.md
+    [Done in 90.98 s (1.52 min)]
+
+>>> [2/6] Generating: NTN-TDL-A | DelaySpread: 300 ns | Elev: 30 deg
+    Role: NLoS Target Domain (matches Sionna DUR300)
+
+=== Fast Mode: Generating ONLY clean channel labels for pyntn (.npy) ===
+  Profile: NTN-TDL-A | DelaySpread: 300.0 ns | Elev: 30.0 deg | Samples: 20000
+  Generated 2000 / 20000 UE drops (10.0%)
+  Generated 4000 / 20000 UE drops (20.0%)
+  Generated 6000 / 20000 UE drops (30.0%)
+  Generated 8000 / 20000 UE drops (40.0%)
+  Generated 10000 / 20000 UE drops (50.0%)
+  Generated 12000 / 20000 UE drops (60.0%)
+  Generated 14000 / 20000 UE drops (70.0%)
+  Generated 16000 / 20000 UE drops (80.0%)
+  Generated 18000 / 20000 UE drops (90.0%)
+  Generated 20000 / 20000 UE drops (100.0%)
+
+--- Saving .npy dataset splits (H_train, H_val, H_test) ---
+Saved NPY channel: generatedChannel_Results\A300_2p18e9_600km_30deg_30kHz\H_train.npy [shape=(16000, 132, 14), complex64]
+Saved NPY channel: generatedChannel_Results\A300_2p18e9_600km_30deg_30kHz\H_val.npy [shape=(2000, 132, 14), complex64]
+Saved NPY channel: generatedChannel_Results\A300_2p18e9_600km_30deg_30kHz\H_test.npy [shape=(2000, 132, 14), complex64]
+Generated pyntn-ready dataset splits in generatedChannel_Results/A300_2p18e9_600km_30deg_30kHz:
+  Train: H_train.npy (16000 drops)
+  Val:   H_val.npy   (2000 drops)
+  Test:  H_test.npy  (2000 drops)
+Saved dataset documentation: generatedChannel_Results\A300_2p18e9_600km_30deg_30kHz\note.md
+    [Done in 83.96 s (1.40 min)]
+
+>>> [3/6] Generating: NTN-TDL-A | DelaySpread: 100 ns | Elev: 30 deg
+    Role: Elevation-only domain shift (70 deg -> 30 deg)
+
+=== Fast Mode: Generating ONLY clean channel labels for pyntn (.npy) ===
+  Profile: NTN-TDL-A | DelaySpread: 100.0 ns | Elev: 30.0 deg | Samples: 20000
+  Generated 2000 / 20000 UE drops (10.0%)
+  Generated 4000 / 20000 UE drops (20.0%)
+  Generated 6000 / 20000 UE drops (30.0%)
+  Generated 8000 / 20000 UE drops (40.0%)
+  Generated 10000 / 20000 UE drops (50.0%)
+  Generated 12000 / 20000 UE drops (60.0%)
+  Generated 14000 / 20000 UE drops (70.0%)
+  Generated 16000 / 20000 UE drops (80.0%)
+  Generated 18000 / 20000 UE drops (90.0%)
+  Generated 20000 / 20000 UE drops (100.0%)
+
+--- Saving .npy dataset splits (H_train, H_val, H_test) ---
+Saved NPY channel: generatedChannel_Results\A100_2p18e9_600km_30deg_30kHz\H_train.npy [shape=(16000, 132, 14), complex64]
+Saved NPY channel: generatedChannel_Results\A100_2p18e9_600km_30deg_30kHz\H_val.npy [shape=(2000, 132, 14), complex64]
+Saved NPY channel: generatedChannel_Results\A100_2p18e9_600km_30deg_30kHz\H_test.npy [shape=(2000, 132, 14), complex64]
+Generated pyntn-ready dataset splits in generatedChannel_Results/A100_2p18e9_600km_30deg_30kHz:
+  Train: H_train.npy (16000 drops)
+  Val:   H_val.npy   (2000 drops)
+  Test:  H_test.npy  (2000 drops)
+Saved dataset documentation: generatedChannel_Results\A100_2p18e9_600km_30deg_30kHz\note.md
+    [Done in 83.13 s (1.39 min)]
+
+>>> [4/6] Generating: NTN-TDL-A | DelaySpread: 500 ns | Elev: 30 deg
+    Role: Dense urban stress test (high delay spread)
+
+=== Fast Mode: Generating ONLY clean channel labels for pyntn (.npy) ===
+  Profile: NTN-TDL-A | DelaySpread: 500.0 ns | Elev: 30.0 deg | Samples: 20000
+  Generated 2000 / 20000 UE drops (10.0%)
+  Generated 4000 / 20000 UE drops (20.0%)
+  Generated 6000 / 20000 UE drops (30.0%)
+  Generated 8000 / 20000 UE drops (40.0%)
+  Generated 10000 / 20000 UE drops (50.0%)
+  Generated 12000 / 20000 UE drops (60.0%)
+  Generated 14000 / 20000 UE drops (70.0%)
+  Generated 16000 / 20000 UE drops (80.0%)
+  Generated 18000 / 20000 UE drops (90.0%)
+  Generated 20000 / 20000 UE drops (100.0%)
+
+--- Saving .npy dataset splits (H_train, H_val, H_test) ---
+Saved NPY channel: generatedChannel_Results\A500_2p18e9_600km_30deg_30kHz\H_train.npy [shape=(16000, 132, 14), complex64]
+Saved NPY channel: generatedChannel_Results\A500_2p18e9_600km_30deg_30kHz\H_val.npy [shape=(2000, 132, 14), complex64]
+Saved NPY channel: generatedChannel_Results\A500_2p18e9_600km_30deg_30kHz\H_test.npy [shape=(2000, 132, 14), complex64]
+Generated pyntn-ready dataset splits in generatedChannel_Results/A500_2p18e9_600km_30deg_30kHz:
+  Train: H_train.npy (16000 drops)
+  Val:   H_val.npy   (2000 drops)
+  Test:  H_test.npy  (2000 drops)
+Saved dataset documentation: generatedChannel_Results\A500_2p18e9_600km_30deg_30kHz\note.md
+    [Done in 82.55 s (1.38 min)]
+
+>>> [5/6] Generating: NTN-TDL-C | DelaySpread: 30 ns | Elev: 70 deg
+    Role: Rural / Open-area clear-sky LoS
+
+=== Fast Mode: Generating ONLY clean channel labels for pyntn (.npy) ===
+  Profile: NTN-TDL-C | DelaySpread: 30.0 ns | Elev: 70.0 deg | Samples: 20000
+  Generated 2000 / 20000 UE drops (10.0%)
+  Generated 4000 / 20000 UE drops (20.0%)
+  Generated 6000 / 20000 UE drops (30.0%)
+  Generated 8000 / 20000 UE drops (40.0%)
+  Generated 10000 / 20000 UE drops (50.0%)
+  Generated 12000 / 20000 UE drops (60.0%)
+  Generated 14000 / 20000 UE drops (70.0%)
+  Generated 16000 / 20000 UE drops (80.0%)
+  Generated 18000 / 20000 UE drops (90.0%)
+  Generated 20000 / 20000 UE drops (100.0%)
+
+--- Saving .npy dataset splits (H_train, H_val, H_test) ---
+Saved NPY channel: generatedChannel_Results\C30_2p18e9_600km_70deg_30kHz\H_train.npy [shape=(16000, 132, 14), complex64]
+Saved NPY channel: generatedChannel_Results\C30_2p18e9_600km_70deg_30kHz\H_val.npy [shape=(2000, 132, 14), complex64]
+Saved NPY channel: generatedChannel_Results\C30_2p18e9_600km_70deg_30kHz\H_test.npy [shape=(2000, 132, 14), complex64]
+Generated pyntn-ready dataset splits in generatedChannel_Results/C30_2p18e9_600km_70deg_30kHz:
+  Train: H_train.npy (16000 drops)
+  Val:   H_val.npy   (2000 drops)
+  Test:  H_test.npy  (2000 drops)
+Saved dataset documentation: generatedChannel_Results\C30_2p18e9_600km_70deg_30kHz\note.md
+    [Done in 80.85 s (1.35 min)]
+
+>>> [6/6] Generating: NTN-TDL-A | DelaySpread: 100 ns | Elev: 70 deg
+    Role: Source Baseline Domain (A100 70deg)
+
+=== Fast Mode: Generating ONLY clean channel labels for pyntn (.npy) ===
+  Profile: NTN-TDL-A | DelaySpread: 100.0 ns | Elev: 70.0 deg | Samples: 20000
+  Generated 2000 / 20000 UE drops (10.0%)
+  Generated 4000 / 20000 UE drops (20.0%)
+  Generated 6000 / 20000 UE drops (30.0%)
+  Generated 8000 / 20000 UE drops (40.0%)
+  Generated 10000 / 20000 UE drops (50.0%)
+  Generated 12000 / 20000 UE drops (60.0%)
+  Generated 14000 / 20000 UE drops (70.0%)
+  Generated 16000 / 20000 UE drops (80.0%)
+  Generated 18000 / 20000 UE drops (90.0%)
+  Generated 20000 / 20000 UE drops (100.0%)
+
+--- Saving .npy dataset splits (H_train, H_val, H_test) ---
+Saved NPY channel: generatedChannel_Results\A100_2p18e9_600km_70deg_30kHz\H_train.npy [shape=(16000, 132, 14), complex64]
+Saved NPY channel: generatedChannel_Results\A100_2p18e9_600km_70deg_30kHz\H_val.npy [shape=(2000, 132, 14), complex64]
+Saved NPY channel: generatedChannel_Results\A100_2p18e9_600km_70deg_30kHz\H_test.npy [shape=(2000, 132, 14), complex64]
+Generated pyntn-ready dataset splits in generatedChannel_Results/A100_2p18e9_600km_70deg_30kHz:
+  Train: H_train.npy (16000 drops)
+  Val:   H_val.npy   (2000 drops)
+  Test:  H_test.npy  (2000 drops)
+Saved dataset documentation: generatedChannel_Results\A100_2p18e9_600km_70deg_30kHz\note.md
+    [Done in 84.37 s (1.41 min)]
+
+====================================================================
+All 6 Datasets Generated Successfully in 8.43 min!
+====================================================================

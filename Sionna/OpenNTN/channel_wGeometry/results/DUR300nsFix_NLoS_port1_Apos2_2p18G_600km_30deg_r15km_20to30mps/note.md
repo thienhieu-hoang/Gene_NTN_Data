@@ -1,9 +1,14 @@
-# Dataset Overview: OpenNTN DUR NLoS (2.18 GHz, 600 km, 30°, 30 kHz)
+# Dataset Overview: OpenNTN DUR (2.18 GHz, 600 km, 30°, 30 kHz)
 
 ## General Information
 
-- **Channel Model:** Dense Urban (DUR) (with setting NLoS)
-- **Data Generator:** OpenNTN
+- **Channel Model:** 3GPP TR 38.811 Dense Urban (DUR) (NLOS (Rayleigh))
+- **Data Generator:** OpenNTN (3GPP TR 38.811 Statistical / Stochastic Channel Model based on Sionna)
+- **Benchmark Role:** NLoS Target Domain (matches Sionna DUR300)
+- **Total Samples:** 20,000 drops (Train: 16,000, Val: 2,000, Test: 2,000)
+- **Available Files:** `H_train.npy` (16,000), `H_val.npy` (2,000), `H_test.npy` (2,000)
+- **Data Type:** `complex64`, shape `(N, 132, 14)`
+- **Power Normalization:** Raw unnormalized channel power (original physical channel scale preserved)
 
 ---
 
@@ -11,7 +16,7 @@
 
 | Parameter | Value |
 | :--- | :--- |
-| **Environment / Scenario** | Urban Expressway (Dense Urban, NLoS) |
+| **Environment / Scenario** | Urban Expressway (DUR, NLoS) |
 | **Carrier Frequency ($f_c$)** | 2.18 GHz |
 | **Subcarrier Spacing (SCS)** | 30 kHz |
 | **OFDM Grid Size** | 11 RBs (132 Subcarriers × 14 Symbols) |
