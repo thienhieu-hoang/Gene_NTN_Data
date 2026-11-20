@@ -1,0 +1,38 @@
+{
+  "dataset_name": "openNTN_RareStress_BeamEdge_v50to120_ds600to1500_elev10to25",
+  "mode": "rare",
+  "total_samples": 20000,
+  "train_samples": 16000,
+  "val_samples": 2000,
+  "test_samples": 2000,
+  "carrier_frequency_hz": 2180000000.0,
+  "beam_radius_km": 50.0,
+  "outer_ring_ratio": 0.7,
+  "elevation_range_deg": [
+    10.0,
+    25.0
+  ],
+  "scs_options_khz": [
+    15.0,
+    30.0,
+    60.0
+  ],
+  "ue_velocity_range_mps": [
+    50.0,
+    120.0
+  ],
+  "stats": {
+    "mean_elev_deg": 17.420633430533393,
+    "los_ratio": 0.0352,
+    "mean_ds_ns": 805.4679713786397,
+    "min_ds_ns": 198.22784052361823,
+    "max_ds_ns": 1492.5919345926854,
+    "mean_v_ue": 85.17858379708588,
+    "max_residual_doppler_hz": 1238.5018441386928,
+    "scenarios_count": {
+      "dur": 6336,
+      "urb": 7104,
+      "sur": 6560
+    }
+  }
+}

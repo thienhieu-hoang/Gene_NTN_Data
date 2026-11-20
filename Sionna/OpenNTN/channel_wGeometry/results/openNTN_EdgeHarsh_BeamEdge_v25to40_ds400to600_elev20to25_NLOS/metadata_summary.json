@@ -1,0 +1,38 @@
+{
+  "dataset_name": "openNTN_EdgeHarsh_BeamEdge_v25to40_ds400to600_elev20to25_NLOS",
+  "mode": "diverse",
+  "total_samples": 20000,
+  "train_samples": 16000,
+  "val_samples": 2000,
+  "test_samples": 2000,
+  "carrier_frequency_hz": 2180000000.0,
+  "beam_radius_km": 50.0,
+  "outer_ring_ratio": 0.7,
+  "elevation_range_deg": [
+    20.0,
+    25.0
+  ],
+  "scs_options_khz": [
+    15.0,
+    30.0,
+    60.0
+  ],
+  "ue_velocity_range_mps": [
+    25.0,
+    40.0
+  ],
+  "stats": {
+    "mean_elev_deg": 22.50573276889154,
+    "los_ratio": 0.0,
+    "mean_ds_ns": 503.77403635679207,
+    "min_ds_ns": 401.82512451181185,
+    "max_ds_ns": 597.2018173151445,
+    "mean_v_ue": 32.542219345690725,
+    "max_residual_doppler_hz": 782.7599990917806,
+    "scenarios_count": {
+      "dur": 5952,
+      "urb": 6784,
+      "sur": 7264
+    }
+  }
+}

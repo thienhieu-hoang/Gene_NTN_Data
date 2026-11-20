@@ -1,0 +1,36 @@
+{
+  "dataset_name": "openNTN_Diverse_50kmBeam_v20to40_scs15to60_elev20to80",
+  "total_samples": 20000,
+  "train_samples": 16000,
+  "val_samples": 2000,
+  "test_samples": 2000,
+  "carrier_frequency_hz": 2180000000.0,
+  "beam_radius_km": 50.0,
+  "elevation_range_deg": [
+    20.0,
+    80.0
+  ],
+  "scs_options_khz": [
+    15,
+    30,
+    60
+  ],
+  "ue_velocity_range_mps": [
+    20.0,
+    40.0
+  ],
+  "stats": {
+    "mean_elev_deg": 49.68253372213357,
+    "los_ratio": 0.2768,
+    "mean_ds_ns": 173.04029117840872,
+    "min_ds_ns": 20.0,
+    "max_ds_ns": 539.7157059753861,
+    "mean_v_ue": 30.05102394202454,
+    "max_residual_doppler_hz": 4052.9396862030535,
+    "scenarios_count": {
+      "dur": 6336,
+      "urb": 7104,
+      "sur": 6560
+    }
+  }
+}
