@@ -29,6 +29,9 @@ param (
     [Nullable[float]]$DsMax = $null,
     [string]$Los = $null,
     [Nullable[float]]$OuterRingRatio = $null,
+    [Nullable[float]]$CarrierFrequency = $null,
+    [Nullable[float]]$SCS = $null,
+    [switch]$NoMat = $false,
     [switch]$DryRun = $false
 )
 
@@ -71,6 +74,9 @@ if ($null -ne $DsMin) { $cmdArgs += @("--ds-min", "$DsMin") }
 if ($null -ne $DsMax) { $cmdArgs += @("--ds-max", "$DsMax") }
 if ($Los) { $cmdArgs += @("--los", "$Los") }
 if ($null -ne $OuterRingRatio) { $cmdArgs += @("--outer-ring-ratio", "$OuterRingRatio") }
+if ($null -ne $CarrierFrequency) { $cmdArgs += @("--carrier-frequency", "$CarrierFrequency") }
+if ($null -ne $SCS) { $cmdArgs += @("--scs", "$SCS") }
+if ($NoMat) { $cmdArgs += @("--no-mat") }
 
 if ($DryRun) {
     Write-Host "`n[DRY-RUN] Command to execute:" -ForegroundColor Magenta

@@ -22,6 +22,7 @@ import sys
 import argparse
 import time
 import json
+import csv
 import numpy as np
 import scipy.io as sio
 import tensorflow as tf
@@ -101,6 +102,12 @@ def main():
     parser.add_argument("--ds-max", type=float, default=None, help="Max custom delay spread in ns")
     parser.add_argument("--los", type=str, default="auto", choices=["auto", "los", "nlos"],
                         help="Propagation state: 'auto' (3GPP probability), 'los' (pure LoS), or 'nlos' (pure NLoS)")
+    parser.add_argument("--scs", type=float, default=None,
+                        help="Fixed Subcarrier Spacing in Hz (e.g. 120e3 or 120000). Overrides mode defaults.")
+    parser.add_argument("--scs-list", type=float, nargs="+", default=None,
+                        help="List of Subcarrier Spacings in Hz (e.g. --scs-list 15e3 30e3 60e3)")
+    parser.add_argument("--no-mat", action="store_true",
+                        help="Skip saving sample_metadata.mat (only save .csv and .json)")
     parser.add_argument("--outer-ring-ratio", type=float, default=0.0,
                         help="If > 0 (e.g. 0.7), sample UEs only in outer ring r in [ratio*r_beam, r_beam]")
     parser.add_argument("--out-name", type=str, default=None,
@@ -132,6 +139,12 @@ def main():
         outer_ring_ratio = args.outer_ring_ratio
         scs_options = [15e3, 30e3, 60e3]
         default_out = "openNTN_Diverse_50kmBeam_v20to40_scs15to60_elev20to80"
+
+    # Override SCS if explicitly provided via CLI
+    if args.scs is not None:
+        scs_options = [float(args.scs)]
+    elif args.scs_list is not None:
+        scs_options = [float(s) for s in args.scs_list]
 
     out_name = args.out_name if args.out_name is not None else default_out
     results_dir = os.path.join(SCRIPT_DIR, "results", out_name)
@@ -198,10 +211,9 @@ def main():
     ut_array = Antenna("single", "V", "omni", carrier_frequency)
     bs_array = AntennaArray(1, 1, "dual", "VH", "38.901", carrier_frequency)
 
-    # 3. RESOURCE GRIDS CACHE FOR SCS {15k, 30k, 60k}
+    # 3. RESOURCE GRIDS CACHE FOR CONFIGURED SCS OPTIONS
     # 11 Resource Blocks * 12 = 132 subcarriers
     # 256 FFT - 132 active = 124 guard carriers -> (62, 62)
-    scs_options = [15e3, 30e3, 60e3]
     rg_cache = {}
     rem_cache = {}
     for scs in scs_options:
@@ -408,18 +420,39 @@ def main():
     print(f"  H_val.npy:   {H_val.shape}   ({os.path.getsize(os.path.join(results_dir, 'H_val.npy')) / 1e6:.1f} MB)")
     print(f"  H_test.npy:  {H_test.shape}  ({os.path.getsize(os.path.join(results_dir, 'H_test.npy')) / 1e6:.1f} MB)")
 
-    # 6. SAVE METADATA (.mat and .json)
-    metadata_mat = {
-        "meta_scenario": np.array(meta_scenario, dtype=object),
-        "meta_elev_deg": np.array(meta_elev_deg, dtype=np.float32),
-        "meta_is_los": np.array(meta_is_los, dtype=np.int32),
-        "meta_ds_ns": np.array(meta_ds_ns, dtype=np.float32),
-        "meta_scs_khz": np.array(meta_scs_khz, dtype=np.float32),
-        "meta_v_ue": np.array(meta_v_ue, dtype=np.float32),
-        "meta_dist_center_m": np.array(meta_dist_center_m, dtype=np.float32),
-        "meta_residual_doppler_hz": np.array(meta_residual_doppler_hz, dtype=np.float32),
-    }
-    sio.savemat(os.path.join(results_dir, "sample_metadata.mat"), metadata_mat)
+    # 6. SAVE METADATA (.csv, .json, and optional .mat)
+    csv_path = os.path.join(results_dir, "sample_metadata.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["SampleIdx", "scenario", "elev_deg", "is_los", "ds_ns", "scs_khz", "v_ue_mps", "dist_center_m", "residual_doppler_hz"])
+        for i in range(total_samples):
+            writer.writerow([
+                i + 1,
+                meta_scenario[i],
+                round(meta_elev_deg[i], 2),
+                int(meta_is_los[i]),
+                round(meta_ds_ns[i], 2),
+                round(meta_scs_khz[i], 1),
+                round(meta_v_ue[i], 2),
+                round(meta_dist_center_m[i], 1),
+                round(meta_residual_doppler_hz[i], 2)
+            ])
+    print(f"Saved sample metadata CSV: {csv_path} ({os.path.getsize(csv_path) / 1e6:.1f} MB)")
+
+    if not args.no_mat:
+        metadata_mat = {
+            "meta_scenario": np.array(meta_scenario, dtype=object),
+            "meta_elev_deg": np.array(meta_elev_deg, dtype=np.float32),
+            "meta_is_los": np.array(meta_is_los, dtype=np.int32),
+            "meta_ds_ns": np.array(meta_ds_ns, dtype=np.float32),
+            "meta_scs_khz": np.array(meta_scs_khz, dtype=np.float32),
+            "meta_v_ue": np.array(meta_v_ue, dtype=np.float32),
+            "meta_dist_center_m": np.array(meta_dist_center_m, dtype=np.float32),
+            "meta_residual_doppler_hz": np.array(meta_residual_doppler_hz, dtype=np.float32),
+        }
+        mat_path = os.path.join(results_dir, "sample_metadata.mat")
+        sio.savemat(mat_path, metadata_mat)
+        print(f"Saved sample metadata MAT: {mat_path} ({os.path.getsize(mat_path) / 1e6:.1f} MB)")
 
     # Also save metadata summary JSON
     summary_json = {
@@ -454,12 +487,17 @@ def main():
         json.dump(summary_json, f, indent=2)
 
     # 7. SAVE DOCUMENTATION note.md
-    note_content = f"""# Dataset Overview: {args.out_name}
+    band_label = "Ka-band" if carrier_frequency >= 18.0e9 else ("C-band" if carrier_frequency >= 4.0e9 else "S-band")
+    n_test = total_samples - n_train - n_val
+    note_content = f"""# Dataset Overview: {out_name}
 
 ## 1. General Information
 - **Channel Generator:** OpenNTN 3GPP TR 38.811 GSCM via Sionna
-- **Carrier Frequency:** {carrier_frequency / 1e9:.2f} GHz (S-band)
-- **Total Drops:** {total_samples:,} (Train: {n_train:,}, Val: {n_val:,}, Test: {total_samples - n_train - n_val:,})
+- **Carrier Frequency:** {carrier_frequency / 1e9:.2f} GHz ({band_label})
+- **Total Drops:** {total_samples:,} (Train: {n_train:,}, Val: {n_val:,}, Test: {n_test:,})
+  - **Train (`H_train.npy`):** First {n_train:,} samples (`SampleIdx` 1 – {n_train:,}, 0-based indices `[0:{n_train}]`)
+  - **Val (`H_val.npy`):** Next {n_val:,} samples (`SampleIdx` {n_train + 1:,} – {n_train + n_val:,}, 0-based indices `[{n_train}:{n_train + n_val}]`)
+  - **Test (`H_test.npy`):** Next {n_test:,} samples (`SampleIdx` {n_train + n_val + 1:,} – {total_samples:,}, 0-based indices `[{n_train + n_val}:{total_samples}]`)
 - **Grid Size:** 132 Subcarriers × 14 OFDM Symbols (Fixed for model compatibility)
 - **Data Type:** `complex64`, raw unnormalized channel matrices `(N, 132, 14)`
 
@@ -473,10 +511,18 @@ def main():
 - **UE Ground Velocity:** {v_min:.1f} m/s to {v_max:.1f} m/s ({v_min*3.6:.0f} km/h to {v_max*3.6:.0f} km/h)
 - **Doppler Model:** Beam-center precompensation with residual differential Doppler (Max residual: $\pm${summary_json['stats']['max_residual_doppler_hz']:.1f} Hz)
 
-## 3. Metadata Files
-- `sample_metadata.mat`: MATLAB-compatible structure containing per-sample physics (`meta_scenario`, `meta_elev_deg`, `meta_is_los`, `meta_ds_ns`, `meta_scs_khz`, `meta_v_ue`, `meta_dist_center_m`, `meta_residual_doppler_hz`).
+## 3. Metadata Files & Split Order Mapping
+- `sample_metadata.csv`: Ground-truth parameters per sample for pandas / Python analysis. Contains all {total_samples:,} drops in sequential order:
+  | Split | `.npy` File | `SampleIdx` (1-based CSV) | Python Slice `[start:stop]` | Count |
+  | :--- | :--- | :--- | :--- | :--- |
+  | **Train** | `H_train.npy` | `1` to `{n_train}` | `[0 : {n_train}]` | {n_train:,} |
+  | **Val** | `H_val.npy` | `{n_train + 1}` to `{n_train + n_val}` | `[{n_train} : {n_train + n_val}]` | {n_val:,} |
+  | **Test** | `H_test.npy` | `{n_train + n_val + 1}` to `{total_samples}` | `[{n_train + n_val} : {total_samples}]` | {n_test:,} |
+- `H_train.npy`, `H_val.npy`, `H_test.npy`: Pure channel tensor splits `(N, 132, 14)` matching the exact sequential rows above.
 - `metadata_summary.json`: High-level statistical summary.
 """
+    if not args.no_mat:
+        note_content += "- `sample_metadata.mat`: MATLAB-compatible structure containing per-sample physics.\n"
     with open(os.path.join(results_dir, "note.md"), "w") as f:
         f.write(note_content)
 
